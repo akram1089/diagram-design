@@ -123,6 +123,27 @@ def main() -> int:
         module.SKILL = original_skill
 
 
+    # semantic-patterns.md states the visual-type count in its opening line; it
+    # must agree with the counters.
+    original_patterns = module.PATTERNS
+    try:
+        with tempfile.TemporaryDirectory(prefix="verify-semantic-motion-patterns-") as temp_dir:
+            stale_patterns = Path(temp_dir) / "semantic-patterns.md"
+            count = module.VISUAL_TYPE_COUNT
+            stale_patterns.write_text(
+                original_patterns.read_text(encoding="utf-8").replace(
+                    f"the {count} visual types", f"the {count - 1} visual types", 1
+                ),
+                encoding="utf-8",
+            )
+            module.PATTERNS = stale_patterns
+            errors = module.verify_markdown()
+            if not any("semantic-patterns.md must name" in e for e in errors):
+                raise AssertionError(f"a stale type count in semantic-patterns.md was accepted: {errors}")
+        print("OK: semantic-patterns.md must state the enforced visual-type count")
+    finally:
+        module.PATTERNS = original_patterns
+
     # ADR 0002 must record the visual-type count the counters enforce, in date order.
     original_adr = module.ADR_0002
     try:

@@ -251,6 +251,12 @@ def verify_markdown() -> list[str]:
             f"visual-type guide must preserve {VISUAL_TYPE_COUNT} rows; found {len(visual_rows)}"
         )
 
+    if f"the {VISUAL_TYPE_COUNT} visual types" not in patterns:
+        errors.append(
+            f"semantic-patterns.md must name the {VISUAL_TYPE_COUNT} visual types in its "
+            "opening line, matching the counters"
+        )
+
     for index, name in enumerate(PATTERN_NAMES, 1):
         if name not in skill:
             errors.append(f"SKILL.md does not route semantic pattern: {name}")
