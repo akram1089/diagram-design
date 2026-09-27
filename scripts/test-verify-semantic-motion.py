@@ -10,6 +10,8 @@ test-verify-motion.py for the other verifiers in this repo.
 from __future__ import annotations
 
 import importlib.util
+import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -141,42 +143,48 @@ def main() -> int:
             )
 
             # The repository pins SKILL.md to LF, so the committed file is what
-            # the cap measures. Dropping the pin must fail the gate.
+            # the cap measures. The gate asks git, so every rule form counts the
+            # way git counts it; each case runs in a scratch repository.
             module.SKILL = original_skill
-            unpinned = scratch / "gitattributes"
-            unpinned.write_text("*.png binary\n", encoding="utf-8")
-            original_attributes = module.GITATTRIBUTES
-            module.GITATTRIBUTES = unpinned
-            try:
-                errors = module.verify_markdown()
-            finally:
-                module.GITATTRIBUTES = original_attributes
-            if not any(".gitattributes must pin" in error for error in errors):
-                raise AssertionError(f"missing LF pin for SKILL.md was accepted: {errors}")
-            # The pin is resolved the way git resolves attributes: the last
-            # matching line wins, and globs count.
-            pin = "skills/diagram-design/SKILL.md text eol=lf\n"
-            for label, attributes, pinned in (
-                ("glob pin", "*.md text eol=lf\n", True),
-                ("unrelated later rule", pin + "docs/*.md eol=crlf\n", True),
-                ("later eol=crlf", pin + "*.md eol=crlf\n", False),
-                ("later -text", pin + "skills/**/SKILL.md -text\n", False),
-                ("later binary", pin + "SKILL.md binary\n", False),
-                ("later unset eol", pin + "SKILL.md !eol\n", False),
-                ("later character class", pin + "SKILL.[m]d eol=crlf\n", False),
-                ("later range class", pin + "skills/*/SKILL.[a-z]d eol=crlf\n", False),
-                ("later negated class that misses", pin + "SKILL.[!m]d eol=crlf\n", True),
-            ):
-                unpinned.write_text(attributes, encoding="utf-8")
-                module.GITATTRIBUTES = unpinned
+            if shutil.which("git") is None:
+                print("SKIP: git not found; the SKILL.md LF pin cases were not run")
+            else:
+                pin = "skills/diagram-design/SKILL.md text eol=lf\n"
+                original_root = module.GIT_ROOT
+                for label, attributes, pinned in (
+                    ("no pin", "*.png binary\n", False),
+                    ("exact pin", pin, True),
+                    ("glob pin", "*.md text eol=lf\n", True),
+                    ("unrelated later rule", pin + "docs/*.md eol=crlf\n", True),
+                    ("later eol=crlf", pin + "*.md eol=crlf\n", False),
+                    ("later -text", pin + "skills/**/SKILL.md -text\n", False),
+                    ("later binary", pin + "SKILL.md binary\n", False),
+                    ("later unset eol", pin + "SKILL.md !eol\n", False),
+                    ("later character class", pin + "SKILL.[m]d eol=crlf\n", False),
+                    ("later negated class that misses", pin + "SKILL.[!m]d eol=crlf\n", True),
+                    ("later class with an escaped bracket", pin + "SKILL.[m\\]]d eol=crlf\n", False),
+                ):
+                    repo = scratch / f"repo-{label.replace(' ', '-')}"
+                    repo.mkdir()
+                    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+                    (repo / ".gitattributes").write_text(attributes, encoding="utf-8")
+                    module.GIT_ROOT = repo
+                    try:
+                        errors = module.verify_markdown()
+                    finally:
+                        module.GIT_ROOT = original_root
+                    flagged = any(".gitattributes must pin" in error for error in errors)
+                    if flagged == pinned:
+                        raise AssertionError(f".gitattributes {label}: pinned={pinned}, got {errors}")
+                outside = scratch / "not-a-repo"
+                outside.mkdir()
+                module.GIT_ROOT = outside
                 try:
-                    errors = module.verify_markdown()
+                    if any(".gitattributes" in error for error in module.verify_markdown()):
+                        raise AssertionError("the LF pin was checked outside a git work tree")
                 finally:
-                    module.GITATTRIBUTES = original_attributes
-                flagged = any(".gitattributes must pin" in error for error in errors)
-                if flagged == pinned:
-                    raise AssertionError(f".gitattributes {label}: pinned={pinned}, got {errors}")
-            print("OK: .gitattributes must pin SKILL.md to LF, resolved as git resolves it")
+                    module.GIT_ROOT = original_root
+                print("OK: .gitattributes must pin SKILL.md to LF, as git resolves it")
     finally:
         module.SKILL = original_skill
 

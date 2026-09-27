@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
+import subprocess
 import sys
 from collections import Counter
 from html.parser import HTMLParser
@@ -17,7 +19,7 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILL = ROOT / "skills/diagram-design/SKILL.md"
-GITATTRIBUTES = ROOT / ".gitattributes"
+GIT_ROOT = ROOT
 PATTERNS = ROOT / "skills/diagram-design/references/semantic-patterns.md"
 ANIMATION = ROOT / "skills/diagram-design/references/animation.md"
 EXAMPLE = ROOT / "skills/diagram-design/assets/example-policy-trace-animated.html"
@@ -184,78 +186,40 @@ def section(markdown: str, heading: str, next_heading: str | None) -> str:
 SKILL_PATH_IN_REPO = "skills/diagram-design/SKILL.md"
 
 
-def _bracket_end(pattern: str, start: int) -> int:
-    """Index of the `]` closing the bracket expression at *start*, or -1."""
-    index = start + 1
-    if index < len(pattern) and pattern[index] in "!^":
-        index += 1
-    if index < len(pattern) and pattern[index] == "]":
-        index += 1
-    end = pattern.find("]", index)
-    return end
+def skill_lf_pin_problem(root: Path) -> str | None:
+    """Why git would not check SKILL.md out as LF text in *root*, or None.
 
-def _gitattributes_pattern(pattern: str) -> re.Pattern[str]:
-    """Translate a .gitattributes path pattern (gitignore rules) to a regex."""
-    anchored = pattern.startswith("/")
-    pattern = pattern.lstrip("/")
-    if "/" not in pattern and not anchored:
-        pattern = "**/" + pattern
-    out = ""
-    index = 0
-    while index < len(pattern):
-        if pattern.startswith("**/", index):
-            out += "(?:.*/)?"
-            index += 3
-        elif pattern.startswith("/**", index) and index + 3 == len(pattern):
-            out += "/.*"
-            index += 3
-        elif pattern[index] == "*":
-            out += "[^/]*"
-            index += 1
-        elif pattern[index] == "?":
-            out += "[^/]"
-            index += 1
-        elif pattern[index] == "[" and _bracket_end(pattern, index) > 0:
-            end = _bracket_end(pattern, index)
-            body = pattern[index + 1 : end]
-            negate = body[:1] in ("!", "^")
-            body = body[1:] if negate else body
-            members = body.replace("\\", "\\\\").replace("^", "\\^").replace("[", "\\[")
-            out += f"(?!/)[{'^' if negate else ''}{members}]"
-            index = end + 1
-        elif pattern[index] == "\\" and index + 1 < len(pattern):
-            out += re.escape(pattern[index + 1])
-            index += 2
-        else:
-            out += re.escape(pattern[index])
-            index += 1
-    return re.compile(out + r"\Z")
-
-
-def gitattributes_for(text: str, path: str) -> dict[str, object]:
-    """Resolve the attributes git applies to *path*: later matching lines win."""
-    resolved: dict[str, object] = {}
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        pattern, *tokens = line.split()
-        if not _gitattributes_pattern(pattern).match(path):
-            continue
-        for token in tokens:
-            if token == "binary":
-                resolved.update({"text": False, "diff": False, "merge": False})
-            elif token.startswith("-"):
-                resolved[token[1:]] = False
-            elif token.startswith("!"):
-                resolved.pop(token[1:], None)
-            elif "=" in token:
-                name, value = token.split("=", 1)
-                resolved[name] = value
-            else:
-                resolved[token] = True
-    return resolved
-
+    Ask git itself (`git check-attr`), so every .gitattributes rule, glob,
+    bracket expression, and later override counts exactly as git counts it.
+    Outside a git work tree there is no checkout to pin, so nothing to check.
+    """
+    git = shutil.which("git")
+    if git is None:
+        return None
+    inside = subprocess.run(
+        [git, "-C", str(root), "rev-parse", "--is-inside-work-tree"],
+        capture_output=True,
+        text=True,
+    )
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        return None
+    result = subprocess.run(
+        [git, "-C", str(root), "check-attr", "text", "eol", "--", SKILL_PATH_IN_REPO],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return f"git check-attr failed: {result.stderr.strip()}"
+    values = dict(
+        line.rsplit(": ", 2)[1:] for line in result.stdout.splitlines() if line.count(": ") >= 2
+    )
+    if values.get("text") not in ("set", "auto") or values.get("eol") != "lf":
+        return (
+            ".gitattributes must pin skills/diagram-design/SKILL.md to `text eol=lf` "
+            f"so the byte cap measures the committed file (git resolves text={values.get('text')}, "
+            f"eol={values.get('eol')})"
+        )
+    return None
 
 def verify_markdown() -> list[str]:
     errors: list[str] = []
@@ -270,13 +234,9 @@ def verify_markdown() -> list[str]:
         errors.append(
             f"SKILL.md exceeds {MAX_SKILL_BYTES} bytes: {len(skill_bytes)} bytes"
         )
-    attributes = GITATTRIBUTES.read_text(encoding="utf-8") if GITATTRIBUTES.is_file() else ""
-    resolved = gitattributes_for(attributes, SKILL_PATH_IN_REPO)
-    if resolved.get("text") not in (True, "auto") or resolved.get("eol") != "lf":
-        errors.append(
-            ".gitattributes must pin skills/diagram-design/SKILL.md to `text eol=lf` "
-            "so the byte cap measures the committed file"
-        )
+    pin_problem = skill_lf_pin_problem(GIT_ROOT)
+    if pin_problem:
+        errors.append(pin_problem)
     if "Selection: semantic pattern, then visual type" not in skill:
         errors.append("SKILL.md must choose semantic pattern before visual type")
     router_position = skill.find("semantic-patterns.md")
