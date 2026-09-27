@@ -399,14 +399,51 @@ def check_font_link_copies(verify) -> None:
             if errors:
                 raise AssertionError(f"a matching css2 copy in {relative} was rejected: {errors}")
 
-            path.write_text(shipped + f"\n```html\n{drifted}\n```\n", encoding="utf-8")
-            errors = run_checks(root, verify.check_export_font_parity)
             expected = [
                 f"{relative} font link drifts from assets/template.html: missing Noto Serif"
             ]
-            if errors != expected:
-                raise AssertionError(f"a drifted css2 copy in {relative} was not reported: {errors}")
+            for copy in (drifted, single_quoted(drifted)):
+                path.write_text(shipped + f"\n```html\n{copy}\n```\n", encoding="utf-8")
+                errors = run_checks(root, verify.check_export_font_parity)
+                if errors != expected:
+                    raise AssertionError(
+                        f"a drifted css2 copy in {relative} was not reported: {copy} {errors}"
+                    )
+
+            path.write_text(shipped + f"\n```html\n{single_quoted(link)}\n```\n", encoding="utf-8")
+            errors = run_checks(root, verify.check_export_font_parity)
+            if errors:
+                raise AssertionError(
+                    f"a matching single-quoted css2 copy in {relative} was rejected: {errors}"
+                )
+
+    # A required surface may quote its href either way; drift is still drift,
+    # not a missing link.
+    with font_fixture() as root:
+        path = root / "skills/diagram-design/references/style-guide.md"
+        path.write_text(style_guide.replace(link, single_quoted(link)), encoding="utf-8")
+        errors = run_checks(root, verify.check_export_font_parity)
+        if errors:
+            raise AssertionError(f"a single-quoted style-guide link was rejected: {errors}")
+
+        path.write_text(style_guide.replace(link, single_quoted(drifted)), encoding="utf-8")
+        errors = run_checks(root, verify.check_export_font_parity)
+        expected = [
+            "references/style-guide.md font link drifts from assets/template.html: "
+            "missing Noto Serif"
+        ]
+        if errors != expected:
+            raise AssertionError(f"a single-quoted drifted style-guide link was not reported: {errors}")
     print("OK font links: a css2 copy in SKILL.md or any reference is held to parity")
+
+
+def single_quoted(link: str) -> str:
+    """*link* with its href value in single quotes instead of double."""
+    head, marker, rest = link.partition('href="')
+    value, closing, tail = rest.partition('"')
+    if not marker or not closing:
+        raise AssertionError(f"no double-quoted href to requote in {link!r}")
+    return f"{head}href='{value}'{tail}"
 
 
 @contextmanager
@@ -493,6 +530,20 @@ def check_split_type_ramp(verify) -> None:
     print("OK type ramp: the moved grid and patterns are held to the output-spec ramp")
 
 
+# Every link a section thinned by the ADR 0004 split must keep, one per moved
+# block. Spelled out here so a route dropped from the verifier fails a test.
+SPLIT_ROUTE_LINKS = (
+    ("## 5. Design System", "references/style-guide.md#node-type--treatment"),
+    ("## 5. Design System", "references/style-guide.md#typography"),
+    ("## 6. Core SVG Primitives", "references/primitives-core.md"),
+    ("## 6. Core SVG Primitives", "references/primitives-core.md#mandatory-connector-rules"),
+    ("## 7. Layout & Spacing", "references/layout-budget.md"),
+    ("## 7. Layout & Spacing", "references/layout-budget.md#complexity-budget-per-diagram"),
+    ("## 8. Summary Card Pattern", "references/layout-budget.md#summary-card-pattern"),
+    ("## 12. Output", "references/primitives-core.md#accessible-svg-contract"),
+)
+
+
 def split_route_error(heading: str, target: str) -> str:
     return (
         f"SKILL.md {heading!r} no longer routes to {target}; the ADR 0004 split "
@@ -508,46 +559,24 @@ def check_split_routes(verify) -> None:
     if errors:
         raise AssertionError(f"shipped SKILL.md split routes failed: {errors}")
 
-    cases = (
-        (
-            "references/layout-budget.md",
-            [
-                split_route_error("## 7. Layout & Spacing", "references/layout-budget.md"),
-                split_route_error("## 8. Summary Card Pattern", "references/layout-budget.md"),
-            ],
-        ),
-        (
-            "references/primitives-core.md",
-            [
-                split_route_error("## 6. Core SVG Primitives", "references/primitives-core.md"),
-                split_route_error("## 12. Output", "references/primitives-core.md"),
-            ],
-        ),
-        (
-            "references/style-guide.md#typography",
-            [split_route_error("## 5. Design System", "references/style-guide.md#typography")],
-        ),
-        (
-            "references/style-guide.md#node-type--treatment",
-            [
-                split_route_error(
-                    "## 5. Design System", "references/style-guide.md#node-type--treatment"
-                )
-            ],
-        ),
-    )
-    for target, expected in cases:
+    # Each moved block keeps its own link, so dropping any one link alone must
+    # fail, even while a sibling link to the same file survives in the section.
+    for heading, target in SPLIT_ROUTE_LINKS:
+        link = f"]({target})"
+        if skill.count(link) != 1:
+            raise AssertionError(f"SKILL.md should carry {link!r} exactly once; update the fixture")
         errors = []
-        verify.check_split_routes(errors, skill.replace(f"]({target}", "](references/gone.md"))
-        if errors != expected:
-            raise AssertionError(f"dropping the {target} route was not reported: {errors}")
+        verify.check_split_routes(errors, skill.replace(link, "](references/gone.md)"))
+        if errors != [split_route_error(heading, target)]:
+            raise AssertionError(f"dropping only the {target} link was not reported: {errors}")
 
     errors = []
     verify.check_split_routes(
         errors, skill.replace("## 8. Summary Card Pattern", "## Summary cards", 1)
     )
     expected = [
-        "SKILL.md has no '## 8.' section; it must route to references/layout-budget.md"
+        "SKILL.md has no '## 8.' section; it must route to "
+        "references/layout-budget.md#summary-card-pattern"
     ]
     if errors != expected:
         raise AssertionError(f"a renumbered split section was not reported: {errors}")

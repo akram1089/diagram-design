@@ -43,8 +43,8 @@ fifteenth nearly did (#217); the sixteenth guards the ADR 0004 split:
 15. Every surface that lists the size presets for selection — the SKILL.md
    and README output-dial tables and the three import commands — must name
    exactly the presets in the output-spec.md size table, in its order.
-16. Every SKILL.md section the ADR 0004 split thinned must keep linking the
-   reference that now holds its content, or that content ships unreachable.
+16. Every SKILL.md section the ADR 0004 split thinned must keep the exact link
+   to each block it moved out, or that content ships unreachable.
 """
 
 from __future__ import annotations
@@ -1188,16 +1188,21 @@ def check_type_ramp_surfaces(errors: list[str], root: Path) -> None:
 
 
 # What the ADR 0004 split (2026-09-27) moved out of SKILL.md, by the section
-# that used to hold it. Each section must keep a link to the new home: the
-# checks above follow the content there, and this keeps agents following too.
+# that used to hold it. Each moved block keeps its own link to the new home,
+# matched exactly: a surviving link to the same file under another anchor does
+# not stand in for it. The checks above follow the content there, and this
+# keeps agents following too.
 SPLIT_ROUTES = (
     ("## 5.", "references/style-guide.md#node-type--treatment"),
     ("## 5.", "references/style-guide.md#typography"),
     ("## 6.", "references/primitives-core.md"),
+    ("## 6.", "references/primitives-core.md#mandatory-connector-rules"),
     ("## 7.", "references/layout-budget.md"),
-    ("## 8.", "references/layout-budget.md"),
-    ("## 12.", "references/primitives-core.md"),
+    ("## 7.", "references/layout-budget.md#complexity-budget-per-diagram"),
+    ("## 8.", "references/layout-budget.md#summary-card-pattern"),
+    ("## 12.", "references/primitives-core.md#accessible-svg-contract"),
 )
+LINK_TARGET = re.compile(r"\]\(([^)\s]+)")
 
 
 def skill_section(markdown: str, number: str) -> tuple[str, str] | None:
@@ -1217,7 +1222,7 @@ def check_split_routes(errors: list[str], markdown: str) -> None:
             errors.append(f"SKILL.md has no '{number}' section; it must route to {target}")
             continue
         heading, body = found
-        if f"]({target}" not in body:
+        if target not in LINK_TARGET.findall(body):
             errors.append(
                 f"SKILL.md {heading!r} no longer routes to {target}; the ADR 0004 split "
                 "moved that content there, so it would ship unreachable"
@@ -1390,7 +1395,10 @@ def check_manifest_descriptions(errors: list[str], root: Path) -> None:
 
 
 SKILL_PACKAGE = Path("skills/diagram-design")
-FONT_LINK = re.compile(r'href="([^"]*fonts\.googleapis\.com[^"]*)"')
+# Either quote style: the backreference ends the value at its own quote.
+FONT_LINK = re.compile(
+    r"""href=(?P<quote>["'])(?P<url>(?:(?!(?P=quote)).)*fonts\.googleapis\.com(?:(?!(?P=quote)).)*)(?P=quote)"""
+)
 # Paths inside the skill package that carry the same css2 link as
 # assets/template.html. template-terminal.html is absent on purpose: the
 # terminal skin loads Geist Mono alone. SKILL.md carried a copy until the
@@ -1403,7 +1411,9 @@ FONT_LINK_SURFACES = (
     Path("references/style-guide.md"),
 )
 # A real css2 copy, as opposed to prose such as `<link href="...fonts.googleapis.com...">`.
-CSS2_LINK = re.compile(r'href="([^"]*fonts\.googleapis\.com/css2\?[^"]*)"')
+CSS2_LINK = re.compile(
+    r"""href=(?P<quote>["'])(?P<url>(?:(?!(?P=quote)).)*fonts\.googleapis\.com/css2\?(?:(?!(?P=quote)).)*)(?P=quote)"""
+)
 
 
 def optional_font_link_surfaces(root: Path) -> list[Path]:
@@ -1472,7 +1482,7 @@ def check_export_font_parity(errors: list[str], root: Path) -> None:
         )
         return
 
-    families = font_families(link.group(1))
+    families = font_families(link.group("url"))
     missing = families - font_families(imported.group(1))
     if missing:
         errors.append(
@@ -1506,14 +1516,14 @@ def check_export_font_parity(errors: list[str], root: Path) -> None:
         if not surface_link:
             errors.append(f"could not locate the font link in {relative.as_posix()}")
             continue
-        report_drift(relative, surface_link.group(1))
+        report_drift(relative, surface_link.group("url"))
 
     for relative in optional_font_link_surfaces(root):
         path = root / SKILL_PACKAGE / relative
         if not path.is_file():
             continue
         for copy in CSS2_LINK.finditer(path.read_text(encoding="utf-8")):
-            report_drift(relative, copy.group(1))
+            report_drift(relative, copy.group("url"))
 
 
 def title_stack_error(name: str, stack: str) -> str | None:
@@ -1562,7 +1572,7 @@ def check_title_fallback_order(errors: list[str], root: Path) -> None:
             if problem:
                 errors.append(problem)
         link = FONT_LINK.search(source)
-        if not link or "family=Noto+Serif" not in font_families(link.group(1)):
+        if not link or "family=Noto+Serif" not in font_families(link.group("url")):
             errors.append(
                 f"{name} font link does not request Noto Serif, which its "
                 "--font-serif names for Cyrillic titles; without it they resolve "
