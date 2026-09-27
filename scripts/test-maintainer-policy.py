@@ -92,6 +92,8 @@ SHELL_GLUE = (
     ("then",),
     ("else",),
     ("fi",),
+    ("case",),
+    ("esac",),
     ("[",),
     ("git", "rev-parse"),
     ("pip", "install"),
@@ -101,6 +103,9 @@ SHELL_GLUE = (
     ("python", "-c"),
 )
 CONDITION = re.compile(r"^(?:if|elif)(?:\s+!)?(?:\s+(?P<condition>.*))?$")
+# A `case` arm such as `SKIP:*) echo "skipped" && exit 1`: the pattern is glue,
+# and the command after it is judged on its own.
+CASE_ARM = re.compile(r"^[^\s()]+\)(?:\s+(?P<command>.*))?$")
 # What is left of ``out="$(python scripts/x.py)"`` once the gate is taken out.
 EMPTIED_ASSIGNMENT = re.compile(r"""^[A-Za-z_]\w*=(["']?)\$\(\s*\)\1$""")
 
@@ -163,6 +168,9 @@ def is_glue(command: str) -> bool:
         return not condition.group("condition") or is_glue(condition.group("condition"))
     if EMPTIED_ASSIGNMENT.match(command):
         return True
+    arm = CASE_ARM.match(command)
+    if arm:
+        return not arm.group("command") or is_glue(arm.group("command"))
     words = command.split()
     if words and words[0] == "python3":
         words[0] = "python"
@@ -403,6 +411,18 @@ SUBSTITUTED_GATE_STEP = """
           echo "$out" | grep -q "All export-wait cases passed"
 """
 
+CASE_GUARDED_STEP = """
+      - name: Verify export snippet stalled-load fallback
+        shell: bash
+        run: |
+          out="$(python scripts/test-export-wait.py)"
+          echo "$out"
+          case "$out" in
+            SKIP:*) echo "::error::export-wait tests skipped" && exit 1 ;;
+          esac
+          echo "$out" | grep -q "All export-wait cases passed"
+"""
+
 UNMAPPED_STEP = """
       - name: Verify something with a shell script
         run: bash scripts/check-something.sh
@@ -521,6 +541,12 @@ def self_test() -> list[str]:
         (
             "CI gate inside command substitution registered",
             synthetic_ci(SUBSTITUTED_GATE_STEP),
+            SYNTHETIC_POLICY_COMMANDS + ["python3 scripts/test-export-wait.py"],
+            None,
+        ),
+        (
+            "CI gate behind a case guard registered",
+            synthetic_ci(CASE_GUARDED_STEP),
             SYNTHETIC_POLICY_COMMANDS + ["python3 scripts/test-export-wait.py"],
             None,
         ),
