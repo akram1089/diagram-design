@@ -8,8 +8,11 @@ is derived from the workflow's ``run:`` steps with these rules:
 
 - Every ``python``/``python3`` invocation of a ``.py`` file is one gate, even
   inside ``$(...)`` or an ``if`` branch. ``python`` is spelled ``python3``
-  locally. Steps that only install or print tools (``pip install``,
-  ``playwright install``, ``python -c``, ``echo``) are not gates.
+  locally.
+- Shell glue is not a gate: the commands in ``SHELL_GLUE`` install or print
+  tools (``pip install``, ``playwright install``, ``python -c``, ``echo``) or
+  steer control flow (``if``/``then``/``else``/``fi``, ``[``, ``git
+  rev-parse``, ``exit``). The list is read off the run lines ci.yml has.
 - A line starting with ``npx`` is one gate (the Claude plugin validator).
 - A ``git diff ... --exit-code`` line checks what the command before it in
   the same step generated, so it joins that command with ``&&`` (the
@@ -18,12 +21,16 @@ is derived from the workflow's ``run:`` steps with these rules:
   not matter: a step that runs on any leg is a gate.
 - The version gate depends on the event. Pull requests run
   ``verify-plugin-package.py --require-no-bump <base>`` against a base that
-  only exists in CI (``"$BASE_REF"`` or ``HEAD^1``); pushes run
-  ``--current-only``. Locally the policy runs ``--require-no-bump
-  origin/main``, which performs the current-tree checks plus the base
-  comparison. All of these forms are the same gate.
-- Any other CI command that mentions ``scripts/`` fails this test until the
-  rules above say how it maps to a local command.
+  only exists in CI (``"$BASE_REF"`` or ``HEAD^1``). Locally the policy runs
+  ``--require-no-bump origin/main``, which performs the current-tree checks
+  plus the base comparison; the two are the same gate. Pushes run
+  ``--current-only``, which skips the base comparison, so it is allowed in CI
+  as the push leg but mirrors nothing: CI must still run a pull-request
+  ``--require-no-bump`` for the policy entry to count.
+- Every other command fails this test until the rules above say how it maps
+  to a local command. Each command in a line (split on ``&&``, ``||``, and
+  ``;``) counts, including an ``if`` condition; a pipeline is judged by its
+  first command.
 """
 
 from __future__ import annotations
@@ -67,6 +74,35 @@ REQUIRED_COMMANDS = {
 }
 
 VERSION_GATE = "python3 scripts/verify-plugin-package.py --require-no-bump <base-ref>"
+LOCAL_VERSION_GATE = "python3 scripts/verify-plugin-package.py --require-no-bump origin/main"
+CI_VERSION_GATES = {
+    'python3 scripts/verify-plugin-package.py --require-no-bump "$BASE_REF"',
+    "python3 scripts/verify-plugin-package.py --require-no-bump HEAD^1",
+}
+# The push leg of the CI version step: current-tree checks only, no base
+# comparison, so it stands in for nothing the policy runs.
+PUSH_ONLY_VERSION_CHECK = "python3 scripts/verify-plugin-package.py --current-only"
+
+# Commands in ci.yml run steps that install or print tools or steer control
+# flow, matched on their leading words (``python3`` read as ``python``).
+# Anything not listed here, not a python gate, and not an npx gate fails closed.
+SHELL_GLUE = (
+    ("echo",),
+    ("exit",),
+    ("then",),
+    ("else",),
+    ("fi",),
+    ("[",),
+    ("git", "rev-parse"),
+    ("pip", "install"),
+    ("python", "-m", "pip", "install"),
+    ("playwright", "install"),
+    ("python", "-m", "playwright", "install"),
+    ("python", "-c"),
+)
+CONDITION = re.compile(r"^(?:if|elif)(?:\s+!)?(?:\s+(?P<condition>.*))?$")
+# What is left of ``out="$(python scripts/x.py)"`` once the gate is taken out.
+EMPTIED_ASSIGNMENT = re.compile(r"""^[A-Za-z_]\w*=(["']?)\$\(\s*\)\1$""")
 
 RUN_KEY = re.compile(r"^(?P<prefix>\s*(?:-\s+)?)run:\s*(?P<value>.*?)\s*$")
 PYTHON_SCRIPT = re.compile(
@@ -75,14 +111,62 @@ PYTHON_SCRIPT = re.compile(
 
 
 def normalize(command: str) -> str:
-    """Canonical form shared by CI commands and policy entries."""
+    """Canonical form of a policy entry: CI spelling, version gate collapsed."""
     command = " ".join(command.split())
     command = re.sub(r"^python(?=\s)", "python3", command)
-    if command.startswith("python3 scripts/verify-plugin-package.py "):
-        rest = command[len("python3 scripts/verify-plugin-package.py ") :]
-        if rest == "--current-only" or re.fullmatch(r"--require-no-bump \S+", rest):
-            return VERSION_GATE
+    return VERSION_GATE if command == LOCAL_VERSION_GATE else command
+
+
+def ci_gate(command: str) -> str | None:
+    """Canonical form of a CI command, or None when it mirrors no local gate."""
+    command = " ".join(command.split())
+    command = re.sub(r"^python(?=\s)", "python3", command)
+    if command in CI_VERSION_GATES:
+        return VERSION_GATE
+    if command == PUSH_ONLY_VERSION_CHECK:
+        return None
     return command
+
+
+def split_commands(line: str) -> list[str]:
+    """Split a shell line on unquoted ``&&``, ``||``, and ``;``."""
+    parts: list[str] = []
+    current: list[str] = []
+    quote = ""
+    index = 0
+    while index < len(line):
+        char = line[index]
+        if quote:
+            if char == "\\" and quote == '"' and index + 1 < len(line):
+                current.append(line[index : index + 2])
+                index += 2
+                continue
+            if char == quote:
+                quote = ""
+        elif char in "'\"":
+            quote = char
+        elif line.startswith(("&&", "||"), index) or char == ";":
+            parts.append("".join(current))
+            current = []
+            index += 2 if char in "&|" else 1
+            continue
+        current.append(char)
+        index += 1
+    parts.append("".join(current))
+    return [part.strip() for part in parts if part.strip()]
+
+
+def is_glue(command: str) -> bool:
+    """Whether one command, gates already removed, is shell glue."""
+    condition = CONDITION.match(command)
+    if condition:
+        return not condition.group("condition") or is_glue(condition.group("condition"))
+    if EMPTIED_ASSIGNMENT.match(command):
+        return True
+    words = command.split()
+    if words and words[0] == "python3":
+        words[0] = "python"
+    return any(tuple(words[: len(glue)]) == glue for glue in SHELL_GLUE)
 
 
 def run_blocks(workflow: str) -> list[list[str]]:
@@ -148,9 +232,10 @@ def ci_gates(workflow: str) -> tuple[set[str], list[str]]:
                 commands.append(line)
                 continue
             commands.extend(match.group(0) for match in PYTHON_SCRIPT.finditer(line))
-            if "scripts/" in PYTHON_SCRIPT.sub("", line):
+            rest = PYTHON_SCRIPT.sub("", line)
+            if "scripts/" in rest or not all(map(is_glue, split_commands(rest))):
                 unmapped.append(line)
-        gates.update(normalize(command) for command in commands)
+        gates.update(gate for gate in map(ci_gate, commands) if gate is not None)
     return gates, unmapped
 
 
@@ -323,6 +408,38 @@ UNMAPPED_STEP = """
         run: bash scripts/check-something.sh
 """
 
+PUSH_ONLY_VERSION_STEP = """\
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "pull requests skip the version gate"
+          else
+            python3 scripts/verify-plugin-package.py --current-only
+          fi
+"""
+
+UNKNOWN_COMMAND_STEPS = {
+    "npm run lint": """
+      - name: Lint with npm
+        run: npm run lint
+""",
+    "node tools/check.js": """
+      - name: Check with node
+        run: node tools/check.js
+""",
+    "python scripts/test-lint-a11y.py && make lint": """
+      - name: Gate chained with an unknown command
+        run: python scripts/test-lint-a11y.py && make lint
+""",
+    "if npm test; then": """
+      - name: Unknown command as an if condition
+        shell: bash
+        run: |
+          if npm test; then
+            echo "tests passed"
+          fi
+""",
+}
+
 
 def synthetic_policy(commands: list[str]) -> dict:
     return {
@@ -401,7 +518,28 @@ def self_test() -> list[str]:
             "cannot map to a local gate (extend scripts/test-maintainer-policy.py): "
             "bash scripts/check-something.sh",
         ),
+        (
+            "CI gate inside command substitution registered",
+            synthetic_ci(SUBSTITUTED_GATE_STEP),
+            SYNTHETIC_POLICY_COMMANDS + ["python3 scripts/test-export-wait.py"],
+            None,
+        ),
+        (
+            "pull requests stop running the version gate",
+            synthetic_ci().replace(old_version_step, PUSH_ONLY_VERSION_STEP + "\n"),
+            SYNTHETIC_POLICY_COMMANDS,
+            "gates.local_commands lists commands that ci.yml does not run: " + VERSION_GATE,
+        ),
     ]
+    cases.extend(
+        (
+            f"unknown CI command fails closed: {line}",
+            synthetic_ci(step),
+            SYNTHETIC_POLICY_COMMANDS,
+            "cannot map to a local gate (extend scripts/test-maintainer-policy.py): " + line,
+        )
+        for line, step in UNKNOWN_COMMAND_STEPS.items()
+    )
     for name, workflow, commands, expected in cases:
         failures = policy_failures(synthetic_policy(commands), workflow)
         if expected is None and failures:
