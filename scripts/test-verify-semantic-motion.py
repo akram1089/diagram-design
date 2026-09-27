@@ -10,6 +10,7 @@ test-verify-motion.py for the other verifiers in this repo.
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -176,14 +177,34 @@ def main() -> int:
                     flagged = any(".gitattributes must pin" in error for error in errors)
                     if flagged == pinned:
                         raise AssertionError(f".gitattributes {label}: pinned={pinned}, got {errors}")
-                outside = scratch / "not-a-repo"
-                outside.mkdir()
-                module.GIT_ROOT = outside
+                # A contributor's own git configuration must not stand in for
+                # the repository pin: a global `*.md text eol=lf` rule, and a
+                # repo-local info/attributes rule, are both ignored.
+                masked = scratch / "repo-masked-by-global-attributes"
+                masked.mkdir()
+                subprocess.run(["git", "init", "-q", str(masked)], check=True)
+                (masked / ".gitattributes").write_text("*.png binary\n", encoding="utf-8")
+                (masked / ".git" / "info").mkdir(parents=True, exist_ok=True)
+                (masked / ".git" / "info" / "attributes").write_text("*.md text eol=lf\n", encoding="utf-8")
+                global_attributes = scratch / "global-attributes"
+                global_attributes.write_text("*.md text eol=lf\n", encoding="utf-8")
+                global_config = scratch / "global-gitconfig"
+                global_config.write_text(
+                    f"[core]\n\tattributesFile = {global_attributes.as_posix()}\n", encoding="utf-8"
+                )
+                saved = os.environ.get("GIT_CONFIG_GLOBAL")
+                os.environ["GIT_CONFIG_GLOBAL"] = str(global_config)
+                module.GIT_ROOT = masked
                 try:
-                    if any(".gitattributes" in error for error in module.verify_markdown()):
-                        raise AssertionError("the LF pin was checked outside a git work tree")
+                    errors = module.verify_markdown()
                 finally:
                     module.GIT_ROOT = original_root
+                    if saved is None:
+                        os.environ.pop("GIT_CONFIG_GLOBAL", None)
+                    else:
+                        os.environ["GIT_CONFIG_GLOBAL"] = saved
+                if not any(".gitattributes must pin" in error for error in errors):
+                    raise AssertionError(f"global or local attributes masked a missing pin: {errors}")
                 print("OK: .gitattributes must pin SKILL.md to LF, as git resolves it")
     finally:
         module.SKILL = original_skill

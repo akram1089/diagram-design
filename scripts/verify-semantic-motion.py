@@ -7,10 +7,12 @@ Uses only the Python standard library and never executes example JavaScript.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
@@ -187,27 +189,44 @@ SKILL_PATH_IN_REPO = "skills/diagram-design/SKILL.md"
 
 
 def skill_lf_pin_problem(root: Path) -> str | None:
-    """Why git would not check SKILL.md out as LF text in *root*, or None.
+    """Why the committed .gitattributes would not keep SKILL.md LF, or None.
 
-    Ask git itself (`git check-attr`), so every .gitattributes rule, glob,
-    bracket expression, and later override counts exactly as git counts it.
-    Outside a git work tree there is no checkout to pin, so nothing to check.
+    Git itself resolves the attributes (`git check-attr`), so every rule,
+    glob, bracket expression, and later override counts exactly as git
+    counts it. It runs in a scratch repository holding only the committed
+    .gitattributes files on SKILL.md's path, with global and system config
+    switched off, so a contributor's own attributes cannot stand in for the
+    repository pin.
     """
     git = shutil.which("git")
     if git is None:
         return None
-    inside = subprocess.run(
-        [git, "-C", str(root), "rev-parse", "--is-inside-work-tree"],
-        capture_output=True,
-        text=True,
-    )
-    if inside.returncode != 0 or inside.stdout.strip() != "true":
-        return None
-    result = subprocess.run(
-        [git, "-C", str(root), "check-attr", "text", "eol", "--", SKILL_PATH_IN_REPO],
-        capture_output=True,
-        text=True,
-    )
+    parts = Path(SKILL_PATH_IN_REPO).parent.parts
+    committed = [Path(*parts[:depth], ".gitattributes") for depth in range(len(parts) + 1)]
+    with tempfile.TemporaryDirectory(prefix="skill-lf-pin-") as scratch:
+        scratch_root = Path(scratch)
+        env = {
+            **os.environ,
+            # Paths that do not exist read as empty on every platform.
+            "GIT_CONFIG_GLOBAL": str(scratch_root / "no-global-config"),
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "HOME": scratch,
+            "XDG_CONFIG_HOME": scratch,
+        }
+        subprocess.run([git, "init", "-q", scratch], capture_output=True, env=env, check=True)
+        for relative in committed:
+            source = root / relative
+            if source.is_file():
+                target = scratch_root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(source.read_bytes())
+        result = subprocess.run(
+            [git, "-C", scratch, "-c", f"core.attributesFile={(scratch_root / 'no-attributes').as_posix()}",
+             "check-attr", "text", "eol", "--", SKILL_PATH_IN_REPO],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
     if result.returncode != 0:
         return f"git check-attr failed: {result.stderr.strip()}"
     values = dict(
