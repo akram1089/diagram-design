@@ -122,6 +122,54 @@ def main() -> int:
     finally:
         module.SKILL = original_skill
 
+
+    # ADR 0002 must record the visual-type count the counters enforce, in date order.
+    original_adr = module.ADR_0002
+    try:
+        with tempfile.TemporaryDirectory(prefix="verify-semantic-motion-adr-") as temp_dir:
+            adr_text = original_adr.read_text(encoding="utf-8")
+            if module.verify_type_count_record():
+                raise AssertionError(
+                    f"shipped ADR 0002 failed: {module.verify_type_count_record()}"
+                )
+            amendments = [
+                line for line in adr_text.splitlines()
+                if line.startswith("**") and " the count is " in line
+            ]
+            stale = Path(temp_dir) / "adr-stale.md"
+            stale.write_text(adr_text.replace(amendments[-1], ""), encoding="utf-8")
+            module.ADR_0002 = stale
+            errors = module.verify_type_count_record()
+            if not any("latest amendment records the visual-type count" in e for e in errors):
+                raise AssertionError(f"stale ADR 0002 count was accepted: {errors}")
+            out_of_order = Path(temp_dir) / "adr-order.md"
+            out_of_order.write_text(
+                adr_text.replace(amendments[0], amendments[0].replace("**2026-", "**2027-", 1)),
+                encoding="utf-8",
+            )
+            module.ADR_0002 = out_of_order
+            errors = module.verify_type_count_record()
+            if not any("not in date order" in e for e in errors):
+                raise AssertionError(f"out-of-order ADR 0002 amendments were accepted: {errors}")
+            untitled = Path(temp_dir) / "adr-untitled.md"
+            untitled.write_text(
+                adr_text.replace(
+                    amendments[-1],
+                    amendments[-1].replace("the count is ", "New type admitted, ", 1),
+                ),
+                encoding="utf-8",
+            )
+            module.ADR_0002 = untitled
+            errors = module.verify_type_count_record()
+            if not any("title it 'the count is N'" in e for e in errors):
+                raise AssertionError(f"an unreadable amendment title was accepted: {errors}")
+        print(
+            "OK: ADR 0002 must record the enforced visual-type count, in date order, "
+            "with readable amendment titles"
+        )
+    finally:
+        module.ADR_0002 = original_adr
+
     # A duplicated HTML/SVG id in the animated example must be rejected.
     with tempfile.TemporaryDirectory(prefix="verify-semantic-motion-example-") as temp_dir:
         source = module.EXAMPLE.read_text(encoding="utf-8")
