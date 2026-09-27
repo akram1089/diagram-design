@@ -140,6 +140,18 @@ def main() -> int:
             errors = module.verify_markdown()
             if not any("semantic-patterns.md must name" in e for e in errors):
                 raise AssertionError(f"a stale type count in semantic-patterns.md was accepted: {errors}")
+            # A later paragraph that still names the right count must not
+            # stand in for a stale opening paragraph.
+            stale_opening = Path(temp_dir) / "semantic-patterns-stale-opening.md"
+            stale_opening.write_text(
+                stale_patterns.read_text(encoding="utf-8")
+                + f"\nThe {count} visual types each have a reference; the {count} visual types count.\n",
+                encoding="utf-8",
+            )
+            module.PATTERNS = stale_opening
+            errors = module.verify_markdown()
+            if not any("semantic-patterns.md must name" in e for e in errors):
+                raise AssertionError(f"a stale opening paragraph was accepted: {errors}")
         print("OK: semantic-patterns.md must state the enforced visual-type count")
     finally:
         module.PATTERNS = original_patterns

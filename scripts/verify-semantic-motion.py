@@ -269,10 +269,18 @@ def verify_markdown() -> list[str]:
             f"visual-type guide must preserve {VISUAL_TYPE_COUNT} rows; found {len(visual_rows)}"
         )
 
-    if f"the {VISUAL_TYPE_COUNT} visual types" not in patterns:
+    opening = next(
+        (
+            block
+            for block in re.split(r"\n\s*\n", patterns)
+            if block.strip() and not block.lstrip().startswith("#")
+        ),
+        "",
+    )
+    if f"the {VISUAL_TYPE_COUNT} visual types" not in opening:
         errors.append(
             f"semantic-patterns.md must name the {VISUAL_TYPE_COUNT} visual types in its "
-            "opening line, matching the counters"
+            "opening paragraph, matching the counters"
         )
 
     for index, name in enumerate(PATTERN_NAMES, 1):
