@@ -195,7 +195,8 @@ def skill_lf_pin_problem(root: Path) -> str | None:
     glob, bracket expression, and later override counts exactly as git
     counts it. It runs in a scratch repository holding only the committed
     .gitattributes files on SKILL.md's path, with global and system config
-    switched off, so a contributor's own attributes cannot stand in for the
+    switched off and inherited GIT_* variables dropped, so neither a
+    contributor's own attributes nor a hook's repository can stand in for the
     repository pin.
     """
     git = shutil.which("git")
@@ -205,8 +206,10 @@ def skill_lf_pin_problem(root: Path) -> str | None:
     committed = [Path(*parts[:depth], ".gitattributes") for depth in range(len(parts) + 1)]
     with tempfile.TemporaryDirectory(prefix="skill-lf-pin-") as scratch:
         scratch_root = Path(scratch)
+        # Drop inherited GIT_* variables: a hook's GIT_DIR or GIT_WORK_TREE would
+        # otherwise point both commands at the caller's repository.
         env = {
-            **os.environ,
+            **{name: value for name, value in os.environ.items() if not name.startswith("GIT_")},
             # Paths that do not exist read as empty on every platform.
             "GIT_CONFIG_GLOBAL": str(scratch_root / "no-global-config"),
             "GIT_CONFIG_NOSYSTEM": "1",

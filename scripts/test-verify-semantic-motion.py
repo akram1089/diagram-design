@@ -205,6 +205,25 @@ def main() -> int:
                         os.environ["GIT_CONFIG_GLOBAL"] = saved
                 if not any(".gitattributes must pin" in error for error in errors):
                     raise AssertionError(f"global or local attributes masked a missing pin: {errors}")
+                # Git hooks export GIT_DIR. An inherited repository location must
+                # neither redirect the scratch repository nor let that
+                # repository's local attributes mask the missing pin.
+                masked_config = (masked / ".git" / "config").read_bytes()
+                saved_dir = os.environ.get("GIT_DIR")
+                os.environ["GIT_DIR"] = str(masked / ".git")
+                module.GIT_ROOT = masked
+                try:
+                    errors = module.verify_markdown()
+                finally:
+                    module.GIT_ROOT = original_root
+                    if saved_dir is None:
+                        os.environ.pop("GIT_DIR", None)
+                    else:
+                        os.environ["GIT_DIR"] = saved_dir
+                if not any(".gitattributes must pin" in error for error in errors):
+                    raise AssertionError(f"an inherited GIT_DIR masked a missing pin: {errors}")
+                if (masked / ".git" / "config").read_bytes() != masked_config:
+                    raise AssertionError("the pin check modified the repository named by GIT_DIR")
                 print("OK: .gitattributes must pin SKILL.md to LF, as git resolves it")
     finally:
         module.SKILL = original_skill
