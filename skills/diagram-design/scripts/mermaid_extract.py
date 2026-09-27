@@ -32,6 +32,10 @@ from typing import Any, NoReturn
 MAX_SOURCE_BYTES = 4 * 1024 * 1024
 MAX_NODES = 2000
 MAX_EDGES = 5000
+# One logical flowchart statement, whether it spans lines or shares a line
+# with others. Real statements are a few hundred characters at most; the cap
+# keeps per-statement parsing work bounded.
+MAX_STATEMENT_CHARS = 4096
 SUPPORTED_KINDS = "flowchart, sequenceDiagram, stateDiagram-v2, erDiagram"
 UNSUPPORTED_KINDS = {
     "pie",
@@ -405,6 +409,13 @@ def _statement_complete(text: str) -> bool:
     return quote is None and not stack
 
 
+def _statement_too_long(line_number: int) -> NoReturn:
+    _fail(
+        f"statement at line {line_number} exceeds the "
+        f"{MAX_STATEMENT_CHARS}-character limit"
+    )
+
+
 def _logical_statements(
     lines: list[tuple[int, str]],
 ) -> list[tuple[int, str]]:
@@ -419,12 +430,17 @@ def _logical_statements(
             start_line = line_number
         pending.append(raw)
         combined = "\n".join(pending)
+        # A statement that spans lines is rescanned each time a line joins it,
+        # so bound it before the completeness scan. One physical line may pack
+        # many short statements; those are bounded one by one after the split.
+        if len(pending) > 1 and len(combined) > MAX_STATEMENT_CHARS:
+            _statement_too_long(start_line)
         if not _statement_complete(combined):
             continue
-        logical.extend(
-            (start_line, statement)
-            for statement in _split_top_level(combined, ";")
-        )
+        for statement in _split_top_level(combined, ";"):
+            if len(statement) > MAX_STATEMENT_CHARS:
+                _statement_too_long(start_line)
+            logical.append((start_line, statement))
         pending = []
     if pending:
         _fail(f"unterminated statement at line {start_line}")
@@ -606,7 +622,10 @@ def _edge_operators(text: str) -> list[_Operator]:
     # `A-- text -->B`, `A-. retry .-> B`, `A== critical ==> B`, and the
     # undirected forms of each. The compact form drops the spaces —
     # `B--yes-->C` — and may retain a left arrow/circle/cross marker, as in
-    # `A<--yes-->B` or `A o--yes--o B`. Its label may not contain whitespace,
+    # `A<--yes-->B` or `A o--yes--o B`. The spaced form consumes exactly one
+    # whitespace character next to each operator; any further padding falls
+    # inside the label span, which `clean_label` strips, so the operator
+    # boundaries are never ambiguous. The compact label may not contain whitespace,
     # and the operator characters themselves may not open one (keeping
     # `A----->B` unlabeled and `A --o B --> C` two separate links).
     text_edge = re.compile(
@@ -615,7 +634,7 @@ def _edge_operators(text: str) -> list[_Operator]:
         r"|(?<![\w.:-])[xo](?:--|-\.|==)"
         r"|(?:--|-\.|==)"
         r")"
-        r"(?:\s+(?P<spaced>.+?)\s+|(?![-=.\s])(?P<compact>[^\s|<>]+?))"
+        r"(?:\s(?P<spaced>.+?)\s|(?![-=.\s])(?P<compact>[^\s|<>]+?))"
         r"(?P<closing>\.-+[>xo]|\.-+|-{2,}>|--[xo]|=+>|={2,}|-{3,})"
     )
     trailing_operator = re.compile(
