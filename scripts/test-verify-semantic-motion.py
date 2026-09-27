@@ -98,27 +98,62 @@ def main() -> int:
                 raise AssertionError(f"missing lifecycle route was accepted: {errors}")
             print("OK: missing lifecycle phase-map route is rejected")
 
-            # The byte cap is inclusive. Pad the real SKILL.md after its final
-            # newline so every other check still reads the shipped content.
-            skill_bytes = original_skill.read_bytes()
+            # The byte cap is inclusive and measures LF-normalized bytes, so a
+            # checkout with core.autocrlf=true measures the same as the
+            # committed file (#246). Pad the real SKILL.md after its final
+            # newline so every other check still reads the shipped content,
+            # and run each boundary with LF and CRLF line endings.
+            skill_bytes = original_skill.read_bytes().replace(b"\r\n", b"\n")
             if len(skill_bytes) > 40_000:
                 raise AssertionError(
                     f"shipped SKILL.md is already {len(skill_bytes)} bytes; "
                     "the boundary cases need it at or under 40000"
                 )
+            if skill_bytes.count(b"\n") < 100:
+                raise AssertionError("shipped SKILL.md has too few lines to test CRLF")
             for size, expected in (
+                (None, []),
                 (40_000, []),
                 (40_001, ["SKILL.md exceeds 40000 bytes: 40001 bytes"]),
             ):
-                padded = scratch / f"skill-{size}.md"
-                padded.write_bytes(skill_bytes + b" " * (size - len(skill_bytes)))
-                module.SKILL = padded
+                lf = skill_bytes if size is None else skill_bytes + b" " * (size - len(skill_bytes))
+                for label, content in (("LF", lf), ("CRLF", lf.replace(b"\n", b"\r\n"))):
+                    padded = scratch / f"skill-{size}-{label}.md"
+                    padded.write_bytes(content)
+                    module.SKILL = padded
+                    errors = module.verify_markdown()
+                    if errors != expected:
+                        raise AssertionError(
+                            f"SKILL.md byte cap, {label}, "
+                            f"{size or 'shipped'} normalized bytes: expected {expected}, got {errors}"
+                        )
+            # Mixed endings normalize the same way and still fail past the cap.
+            over = skill_bytes + b" " * (40_001 - len(skill_bytes))
+            head, tail = over[: len(over) // 2], over[len(over) // 2 :]
+            mixed = scratch / "skill-mixed.md"
+            mixed.write_bytes(head.replace(b"\n", b"\r\n") + tail)
+            module.SKILL = mixed
+            if module.verify_markdown() != ["SKILL.md exceeds 40000 bytes: 40001 bytes"]:
+                raise AssertionError(f"mixed line endings loosened the cap: {module.verify_markdown()}")
+            print(
+                "OK: SKILL.md passes at 40000 LF-normalized bytes and is rejected at "
+                "40001, with LF, CRLF, and mixed line endings alike"
+            )
+
+            # The repository pins SKILL.md to LF, so the committed file is what
+            # the cap measures. Dropping the pin must fail the gate.
+            module.SKILL = original_skill
+            unpinned = scratch / "gitattributes"
+            unpinned.write_text("*.png binary\n", encoding="utf-8")
+            original_attributes = module.GITATTRIBUTES
+            module.GITATTRIBUTES = unpinned
+            try:
                 errors = module.verify_markdown()
-                if errors != expected:
-                    raise AssertionError(
-                        f"SKILL.md byte cap at {size} bytes: expected {expected}, got {errors}"
-                    )
-            print("OK: SKILL.md passes at 40000 bytes and is rejected at 40001")
+            finally:
+                module.GITATTRIBUTES = original_attributes
+            if not any(".gitattributes must pin" in error for error in errors):
+                raise AssertionError(f"missing LF pin for SKILL.md was accepted: {errors}")
+            print("OK: .gitattributes must pin SKILL.md to LF")
     finally:
         module.SKILL = original_skill
 

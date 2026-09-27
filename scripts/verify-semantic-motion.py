@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILL = ROOT / "skills/diagram-design/SKILL.md"
+GITATTRIBUTES = ROOT / ".gitattributes"
 PATTERNS = ROOT / "skills/diagram-design/references/semantic-patterns.md"
 ANIMATION = ROOT / "skills/diagram-design/references/animation.md"
 EXAMPLE = ROOT / "skills/diagram-design/assets/example-policy-trace-animated.html"
@@ -182,7 +183,9 @@ def section(markdown: str, heading: str, next_heading: str | None) -> str:
 
 def verify_markdown() -> list[str]:
     errors: list[str] = []
-    skill_bytes = SKILL.read_bytes()
+    # Measure the committed LF content. A checkout with core.autocrlf=true adds
+    # one CR per line, which would otherwise fail the cap on Windows (#246).
+    skill_bytes = SKILL.read_bytes().replace(b"\r\n", b"\n")
     skill = skill_bytes.decode("utf-8")
     patterns = PATTERNS.read_text(encoding="utf-8")
     animation = ANIMATION.read_text(encoding="utf-8")
@@ -190,6 +193,19 @@ def verify_markdown() -> list[str]:
     if len(skill_bytes) > MAX_SKILL_BYTES:
         errors.append(
             f"SKILL.md exceeds {MAX_SKILL_BYTES} bytes: {len(skill_bytes)} bytes"
+        )
+    attributes = GITATTRIBUTES.read_text(encoding="utf-8") if GITATTRIBUTES.is_file() else ""
+    pinned = any(
+        line.split()[0] == "skills/diagram-design/SKILL.md"
+        and "text" in line.split()[1:]
+        and "eol=lf" in line.split()[1:]
+        for line in attributes.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+    if not pinned:
+        errors.append(
+            ".gitattributes must pin skills/diagram-design/SKILL.md to `text eol=lf` "
+            "so the byte cap measures the committed file"
         )
     if "Selection: semantic pattern, then visual type" not in skill:
         errors.append("SKILL.md must choose semantic pattern before visual type")
