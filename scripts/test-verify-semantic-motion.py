@@ -184,6 +184,25 @@ def main() -> int:
             errors = module.verify_type_count_record()
             if not any("title it 'the count is N'" in e for e in errors):
                 raise AssertionError(f"an unreadable amendment title was accepted: {errors}")
+            last = amendments[-1]
+            last_date = last[2:12]
+            for label, replacement, needle in (
+                ("short date", last.replace(last_date, "2026-10-1", 1), "not a YYYY-MM-DD date"),
+                ("impossible date", last.replace(last_date, "2026-13-01", 1), "not a real date"),
+                (
+                    "nonsense pattern count",
+                    last.replace("the count is", "the pattern count is", 1).replace(
+                        "is " + str(module.VISUAL_TYPE_COUNT), "is banana", 1
+                    ),
+                    "title it 'the count is N'",
+                ),
+            ):
+                broken = Path(temp_dir) / f"adr-{label.replace(' ', '-')}.md"
+                broken.write_text(adr_text.replace(last, replacement), encoding="utf-8")
+                module.ADR_0002 = broken
+                errors = module.verify_type_count_record()
+                if not any(needle in e for e in errors):
+                    raise AssertionError(f"ADR 0002 {label} was accepted: {errors}")
         print(
             "OK: ADR 0002 must record the enforced visual-type count, in date order, "
             "with readable amendment titles"

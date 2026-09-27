@@ -7,6 +7,7 @@ Uses only the Python standard library and never executes example JavaScript.
 from __future__ import annotations
 
 import argparse
+import datetime
 import re
 import sys
 from collections import Counter
@@ -181,6 +182,11 @@ def section(markdown: str, heading: str, next_heading: str | None) -> str:
     return markdown[start:] if end < 0 else markdown[start:end]
 
 
+NUMBER_WORDS = (
+    "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|"
+    "fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty"
+)
+
 def verify_type_count_record() -> list[str]:
     """ADR 0002 is the authority for the visual-type count; the counter follows it.
 
@@ -191,16 +197,28 @@ def verify_type_count_record() -> list[str]:
     """
     errors: list[str] = []
     adr = ADR_0002.read_text(encoding="utf-8")
+    # Find every bold paragraph that opens with a digit before judging its
+    # form, so a malformed date cannot hide an amendment from the check.
     amendments = re.findall(
-        r"^\*\*(\d{4}-\d{2}-\d{2})\s+\S+\s+(.+?)\.\*\*", adr, re.MULTILINE
+        r"^\*\*(\d[\d-]*\d)\s+\S+\s+(.+?)\.\*\*", adr, re.MULTILINE
     )
-    dates = [date for date, _title in amendments]
+    dates: list[str] = []
+    for date, _title in amendments:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+            errors.append(f"ADR 0002 amendment date {date!r} is not a YYYY-MM-DD date")
+            continue
+        try:
+            datetime.date(int(date[:4]), int(date[5:7]), int(date[8:]))
+        except ValueError:
+            errors.append(f"ADR 0002 amendment date {date!r} is not a real date")
+            continue
+        dates.append(date)
     counts: list[tuple[str, int]] = []
     for date, title in amendments:
         count = re.fullmatch(r"the count is (\d+)", title)
         if count:
             counts.append((date, int(count.group(1))))
-        elif not re.fullmatch(r"the pattern count is \S+", title):
+        elif not re.fullmatch(rf"the pattern count is (?:\d+|{NUMBER_WORDS})", title):
             errors.append(
                 f"ADR 0002 amendment dated {date} is titled {title!r}; title it "
                 "'the count is N' (or 'the pattern count is N' for a semantic "
@@ -215,7 +233,7 @@ def verify_type_count_record() -> list[str]:
             f"ADR 0002's latest amendment records the visual-type count as {counts[-1][1]}, "
             f"but the counters say {VISUAL_TYPE_COUNT}; add an amendment titled "
             f"'the count is {VISUAL_TYPE_COUNT}' as the last entry, dated on or after "
-            f"{max(dates)}"
+            f"{max(dates) if dates else 'the newest amendment'}"
         )
     return errors
 
