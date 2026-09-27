@@ -864,6 +864,28 @@ def check_errors_and_limits(tmp: Path) -> None:
         [str(unterminated_long)],
         f"statement at line 2 exceeds the {statement_cap}-character limit",
     )
+    minified_then_multiline = tmp / "statement-minified-then-multiline.mmd"
+    minified_then_multiline.write_text(
+        "flowchart TD\n"
+        + ";".join(f"N{index}-->N{index + 1}" for index in range(600))
+        + ';M["label that\ncontinues"] --> N0\n',
+        encoding="utf-8",
+    )
+    minified_multiline = json.loads(run_extract([str(minified_then_multiline), "--json"]))["diagrams"][0]
+    if len(minified_multiline["edges"]) != 601:
+        fail(
+            "a minified line followed by a multiline label must parse every statement: "
+            f"{len(minified_multiline['edges'])} edges"
+        )
+    unterminated_one_line = tmp / "statement-unterminated-one-line.mmd"
+    unterminated_one_line.write_text(
+        'flowchart TD\nA["' + "x" * (statement_cap + 10) + "\n",
+        encoding="utf-8",
+    )
+    expect_error(
+        [str(unterminated_one_line)],
+        f"statement at line 2 exceeds the {statement_cap}-character limit",
+    )
     ok("all documented exit-2 paths and resource caps fire specifically")
 
 

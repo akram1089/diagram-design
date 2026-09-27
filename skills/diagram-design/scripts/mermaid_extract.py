@@ -430,18 +430,22 @@ def _logical_statements(
             start_line = line_number
         pending.append(raw)
         combined = "\n".join(pending)
-        # A statement that spans lines is rescanned each time a line joins it,
-        # so bound it before the completeness scan. One physical line may pack
-        # many short statements; those are bounded one by one after the split.
-        if len(pending) > 1 and len(combined) > MAX_STATEMENT_CHARS:
-            _statement_too_long(start_line)
-        if not _statement_complete(combined):
-            continue
-        for statement in _split_top_level(combined, ";"):
+        statements = _split_top_level(combined, ";")
+        complete = _statement_complete(combined)
+        # Everything before the last top-level semicolon is finished even while
+        # a quote or bracket after it stays open, so only that open statement is
+        # carried to the next line. Each statement is bounded on its own, and
+        # the open one is bounded before the next line joins and rescans it.
+        for statement in statements if complete else statements[:-1]:
             if len(statement) > MAX_STATEMENT_CHARS:
                 _statement_too_long(start_line)
             logical.append((start_line, statement))
-        pending = []
+        if complete:
+            pending = []
+            continue
+        if len(statements[-1]) > MAX_STATEMENT_CHARS:
+            _statement_too_long(start_line)
+        pending = [statements[-1]]
     if pending:
         _fail(f"unterminated statement at line {start_line}")
     return logical
