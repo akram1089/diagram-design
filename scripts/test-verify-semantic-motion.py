@@ -153,7 +153,27 @@ def main() -> int:
                 module.GITATTRIBUTES = original_attributes
             if not any(".gitattributes must pin" in error for error in errors):
                 raise AssertionError(f"missing LF pin for SKILL.md was accepted: {errors}")
-            print("OK: .gitattributes must pin SKILL.md to LF")
+            # The pin is resolved the way git resolves attributes: the last
+            # matching line wins, and globs count.
+            pin = "skills/diagram-design/SKILL.md text eol=lf\n"
+            for label, attributes, pinned in (
+                ("glob pin", "*.md text eol=lf\n", True),
+                ("unrelated later rule", pin + "docs/*.md eol=crlf\n", True),
+                ("later eol=crlf", pin + "*.md eol=crlf\n", False),
+                ("later -text", pin + "skills/**/SKILL.md -text\n", False),
+                ("later binary", pin + "SKILL.md binary\n", False),
+                ("later unset eol", pin + "SKILL.md !eol\n", False),
+            ):
+                unpinned.write_text(attributes, encoding="utf-8")
+                module.GITATTRIBUTES = unpinned
+                try:
+                    errors = module.verify_markdown()
+                finally:
+                    module.GITATTRIBUTES = original_attributes
+                flagged = any(".gitattributes must pin" in error for error in errors)
+                if flagged == pinned:
+                    raise AssertionError(f".gitattributes {label}: pinned={pinned}, got {errors}")
+            print("OK: .gitattributes must pin SKILL.md to LF, resolved as git resolves it")
     finally:
         module.SKILL = original_skill
 

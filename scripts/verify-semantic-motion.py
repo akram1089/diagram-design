@@ -181,6 +181,61 @@ def section(markdown: str, heading: str, next_heading: str | None) -> str:
     return markdown[start:] if end < 0 else markdown[start:end]
 
 
+SKILL_PATH_IN_REPO = "skills/diagram-design/SKILL.md"
+
+
+def _gitattributes_pattern(pattern: str) -> re.Pattern[str]:
+    """Translate a .gitattributes path pattern (gitignore rules) to a regex."""
+    anchored = pattern.startswith("/")
+    pattern = pattern.lstrip("/")
+    if "/" not in pattern and not anchored:
+        pattern = "**/" + pattern
+    out = ""
+    index = 0
+    while index < len(pattern):
+        if pattern.startswith("**/", index):
+            out += "(?:.*/)?"
+            index += 3
+        elif pattern.startswith("/**", index) and index + 3 == len(pattern):
+            out += "/.*"
+            index += 3
+        elif pattern[index] == "*":
+            out += "[^/]*"
+            index += 1
+        elif pattern[index] == "?":
+            out += "[^/]"
+            index += 1
+        else:
+            out += re.escape(pattern[index])
+            index += 1
+    return re.compile(out + r"\Z")
+
+
+def gitattributes_for(text: str, path: str) -> dict[str, object]:
+    """Resolve the attributes git applies to *path*: later matching lines win."""
+    resolved: dict[str, object] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        pattern, *tokens = line.split()
+        if not _gitattributes_pattern(pattern).match(path):
+            continue
+        for token in tokens:
+            if token == "binary":
+                resolved.update({"text": False, "diff": False, "merge": False})
+            elif token.startswith("-"):
+                resolved[token[1:]] = False
+            elif token.startswith("!"):
+                resolved.pop(token[1:], None)
+            elif "=" in token:
+                name, value = token.split("=", 1)
+                resolved[name] = value
+            else:
+                resolved[token] = True
+    return resolved
+
+
 def verify_markdown() -> list[str]:
     errors: list[str] = []
     # Measure the committed LF content. A checkout with core.autocrlf=true adds
@@ -195,14 +250,8 @@ def verify_markdown() -> list[str]:
             f"SKILL.md exceeds {MAX_SKILL_BYTES} bytes: {len(skill_bytes)} bytes"
         )
     attributes = GITATTRIBUTES.read_text(encoding="utf-8") if GITATTRIBUTES.is_file() else ""
-    pinned = any(
-        line.split()[0] == "skills/diagram-design/SKILL.md"
-        and "text" in line.split()[1:]
-        and "eol=lf" in line.split()[1:]
-        for line in attributes.splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    )
-    if not pinned:
+    resolved = gitattributes_for(attributes, SKILL_PATH_IN_REPO)
+    if resolved.get("text") not in (True, "auto") or resolved.get("eol") != "lf":
         errors.append(
             ".gitattributes must pin skills/diagram-design/SKILL.md to `text eol=lf` "
             "so the byte cap measures the committed file"
