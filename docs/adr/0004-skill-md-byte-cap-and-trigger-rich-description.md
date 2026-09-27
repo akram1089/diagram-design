@@ -17,3 +17,15 @@ Two rules, in priority order:
 
 - Adding a visual type requires touching the description; CI fails otherwise, by design.
 - The cap is measured on raw bytes with `core.autocrlf=false` pinned in CI checkout; Windows contributors should keep LF endings for `SKILL.md`.
+
+## Amendments
+
+**2026-09-27: SKILL.md is a router; detail loads from two routed references.** SKILL.md loads on every invocation, and at 39,530 bytes it had 470 bytes of headroom. It is now 28,670 bytes. The frontmatter `description` is unchanged, the §0 to §12 numbering is unchanged, and SKILL.md keeps what every run needs: the setup gate, the §3 routing tables, the anti-patterns, the semantic roles and focal rule, the six connector rules as one line each with their numbers, the universal complexity limits and split rule, the §9 gate, §11, and a one-line-per-point accessible-SVG contract. Everything else moved, verbatim or to an equivalent that already existed:
+
+- `references/primitives-core.md` (new): background and dotted variant, arrow markers and the arrow table, the full text of the six connector rules, the node box, arrow label and legend markup, and the long form of the accessible-SVG contract.
+- `references/layout-budget.md` (new): the 4px grid table, every per-type complexity budget row, page layout, and the summary card pattern.
+- `references/style-guide.md` (existing): it already held the node type to treatment table, the typography table, and the Google Fonts `<link>` that SKILL.md repeated, so SKILL.md now links those sections instead of copying them.
+
+The checks follow the content. `verify-docs-sync.py` runs the grid rule against `layout-budget.md` and the type-ramp font-size rule against SKILL.md, `primitives-core.md`, and `layout-budget.md`. Font-link parity no longer requires a copy in SKILL.md, and now also checks any css2 copy found in SKILL.md or any reference. A new split-routing check fails when a thinned SKILL.md section (§5, §6, §7, §8, §12) stops linking the reference that holds its content. The 40,000-byte cap and rule 1 are unchanged.
+
+A new type's budget row goes in `layout-budget.md`. ADR 0007 kept the rows in SKILL.md because several older type references state no limits of their own; that reason still holds, which is why the rows moved together into one table rather than into the type references.
