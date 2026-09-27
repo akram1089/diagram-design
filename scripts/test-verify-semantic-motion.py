@@ -163,6 +163,9 @@ def main() -> int:
                 ("later -text", pin + "skills/**/SKILL.md -text\n", False),
                 ("later binary", pin + "SKILL.md binary\n", False),
                 ("later unset eol", pin + "SKILL.md !eol\n", False),
+                ("later character class", pin + "SKILL.[m]d eol=crlf\n", False),
+                ("later range class", pin + "skills/*/SKILL.[a-z]d eol=crlf\n", False),
+                ("later negated class that misses", pin + "SKILL.[!m]d eol=crlf\n", True),
             ):
                 unpinned.write_text(attributes, encoding="utf-8")
                 module.GITATTRIBUTES = unpinned

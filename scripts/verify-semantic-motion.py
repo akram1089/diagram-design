@@ -184,6 +184,16 @@ def section(markdown: str, heading: str, next_heading: str | None) -> str:
 SKILL_PATH_IN_REPO = "skills/diagram-design/SKILL.md"
 
 
+def _bracket_end(pattern: str, start: int) -> int:
+    """Index of the `]` closing the bracket expression at *start*, or -1."""
+    index = start + 1
+    if index < len(pattern) and pattern[index] in "!^":
+        index += 1
+    if index < len(pattern) and pattern[index] == "]":
+        index += 1
+    end = pattern.find("]", index)
+    return end
+
 def _gitattributes_pattern(pattern: str) -> re.Pattern[str]:
     """Translate a .gitattributes path pattern (gitignore rules) to a regex."""
     anchored = pattern.startswith("/")
@@ -205,6 +215,17 @@ def _gitattributes_pattern(pattern: str) -> re.Pattern[str]:
         elif pattern[index] == "?":
             out += "[^/]"
             index += 1
+        elif pattern[index] == "[" and _bracket_end(pattern, index) > 0:
+            end = _bracket_end(pattern, index)
+            body = pattern[index + 1 : end]
+            negate = body[:1] in ("!", "^")
+            body = body[1:] if negate else body
+            members = body.replace("\\", "\\\\").replace("^", "\\^").replace("[", "\\[")
+            out += f"(?!/)[{'^' if negate else ''}{members}]"
+            index = end + 1
+        elif pattern[index] == "\\" and index + 1 < len(pattern):
+            out += re.escape(pattern[index + 1])
+            index += 2
         else:
             out += re.escape(pattern[index])
             index += 1
