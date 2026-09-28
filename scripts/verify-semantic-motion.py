@@ -7,8 +7,12 @@ Uses only the Python standard library and never executes example JavaScript.
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
@@ -17,6 +21,7 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILL = ROOT / "skills/diagram-design/SKILL.md"
+GIT_ROOT = ROOT
 PATTERNS = ROOT / "skills/diagram-design/references/semantic-patterns.md"
 ANIMATION = ROOT / "skills/diagram-design/references/animation.md"
 EXAMPLE = ROOT / "skills/diagram-design/assets/example-policy-trace-animated.html"
@@ -180,9 +185,69 @@ def section(markdown: str, heading: str, next_heading: str | None) -> str:
     return markdown[start:] if end < 0 else markdown[start:end]
 
 
+SKILL_PATH_IN_REPO = "skills/diagram-design/SKILL.md"
+
+
+def skill_lf_pin_problem(root: Path) -> str | None:
+    """Why the committed .gitattributes would not keep SKILL.md LF, or None.
+
+    Git itself resolves the attributes (`git check-attr`), so every rule,
+    glob, bracket expression, and later override counts exactly as git
+    counts it. It runs in a scratch repository holding only the committed
+    .gitattributes files on SKILL.md's path, with global and system config
+    switched off and inherited GIT_* variables dropped, so neither a
+    contributor's own attributes nor a hook's repository can stand in for the
+    repository pin.
+    """
+    git = shutil.which("git")
+    if git is None:
+        return None
+    parts = Path(SKILL_PATH_IN_REPO).parent.parts
+    committed = [Path(*parts[:depth], ".gitattributes") for depth in range(len(parts) + 1)]
+    with tempfile.TemporaryDirectory(prefix="skill-lf-pin-") as scratch:
+        scratch_root = Path(scratch)
+        # Drop inherited GIT_* variables: a hook's GIT_DIR or GIT_WORK_TREE would
+        # otherwise point both commands at the caller's repository.
+        env = {
+            **{name: value for name, value in os.environ.items() if not name.startswith("GIT_")},
+            # Paths that do not exist read as empty on every platform.
+            "GIT_CONFIG_GLOBAL": str(scratch_root / "no-global-config"),
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "HOME": scratch,
+            "XDG_CONFIG_HOME": scratch,
+        }
+        subprocess.run([git, "init", "-q", scratch], capture_output=True, env=env, check=True)
+        for relative in committed:
+            source = root / relative
+            if source.is_file():
+                target = scratch_root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(source.read_bytes())
+        result = subprocess.run(
+            [git, "-C", scratch, "-c", f"core.attributesFile={(scratch_root / 'no-attributes').as_posix()}",
+             "check-attr", "text", "eol", "--", SKILL_PATH_IN_REPO],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+    if result.returncode != 0:
+        return f"git check-attr failed: {result.stderr.strip()}"
+    values = dict(
+        line.rsplit(": ", 2)[1:] for line in result.stdout.splitlines() if line.count(": ") >= 2
+    )
+    if values.get("text") not in ("set", "auto") or values.get("eol") != "lf":
+        return (
+            ".gitattributes must pin skills/diagram-design/SKILL.md to `text eol=lf` "
+            f"so the byte cap measures the committed file (git resolves text={values.get('text')}, "
+            f"eol={values.get('eol')})"
+        )
+    return None
+
 def verify_markdown() -> list[str]:
     errors: list[str] = []
-    skill_bytes = SKILL.read_bytes()
+    # Measure the committed LF content. A checkout with core.autocrlf=true adds
+    # one CR per line, which would otherwise fail the cap on Windows (#246).
+    skill_bytes = SKILL.read_bytes().replace(b"\r\n", b"\n")
     skill = skill_bytes.decode("utf-8")
     patterns = PATTERNS.read_text(encoding="utf-8")
     animation = ANIMATION.read_text(encoding="utf-8")
@@ -191,6 +256,9 @@ def verify_markdown() -> list[str]:
         errors.append(
             f"SKILL.md exceeds {MAX_SKILL_BYTES} bytes: {len(skill_bytes)} bytes"
         )
+    pin_problem = skill_lf_pin_problem(GIT_ROOT)
+    if pin_problem:
+        errors.append(pin_problem)
     if "Selection: semantic pattern, then visual type" not in skill:
         errors.append("SKILL.md must choose semantic pattern before visual type")
     router_position = skill.find("semantic-patterns.md")
