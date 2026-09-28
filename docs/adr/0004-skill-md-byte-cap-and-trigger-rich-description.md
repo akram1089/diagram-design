@@ -16,4 +16,4 @@ Two rules, in priority order:
 ## Consequences
 
 - Adding a visual type requires touching the description; CI fails otherwise, by design.
-- The cap is measured on raw bytes with `core.autocrlf=false` pinned in CI checkout; Windows contributors should keep LF endings for `SKILL.md`.
+- `.gitattributes` pins SKILL.md to LF in the repository and in every checkout, and the cap counts LF-normalized bytes, so a checkout with `core.autocrlf=true` measures the committed size ([#246](https://github.com/cathrynlavery/diagram-design/issues/246)). Normalization never loosens the cap: 40,001 LF bytes still fail, and the gate fails if the pin is removed.
