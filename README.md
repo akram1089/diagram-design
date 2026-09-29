@@ -1,6 +1,7 @@
-# Diagram Design
-
-**Editorial diagrams your designer won't hate.**
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/hero/hero-dark.webp">
+  <img alt="Diagram Design. Editorial diagrams your designer won't hate." src="docs/hero/hero-light.webp">
+</picture>
 
 <a href="https://trendshift.io/repositories/26141?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-26141" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/26141" alt="cathrynlavery%2Fdiagram-design | Trendshift" width="250" height="55"/></a>
 
