@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import struct
 import subprocess
 import sys
@@ -90,6 +91,7 @@ def fixture(
     intent_to_add: tuple[str, ...] = (),
     manifest_overrides: dict | None = None,
     edit_after_add: dict[str, bytes] | None = None,
+    symlinks: dict[str, str] | None = None,
 ) -> Path:
     root = tmp / name
     (root / ".codex-plugin").mkdir(parents=True)
@@ -130,6 +132,10 @@ def fixture(
     for relative, data in (extra or {}).items():
         (root / relative).parent.mkdir(parents=True, exist_ok=True)
         (root / relative).write_bytes(data)
+        tracked.append(relative)
+    for relative, target in (symlinks or {}).items():
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(target, root / relative)
         tracked.append(relative)
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
     subprocess.run(["git", "add", "--", *tracked], cwd=root, check=True)
@@ -194,7 +200,14 @@ def main() -> int:
                 "PRIVACY.md",
             ):
                 check(f"repo ZIP contains {required}", required in names)
-            stray = [n for n in names if not n.startswith(ALLOWED_PREFIXES)]
+            repo_interface = json.loads((ROOT / ".codex-plugin/plugin.json").read_text())["interface"]
+            declared = {
+                value[2:]
+                for key in ("logo", "composerIcon")
+                for value in [repo_interface.get(key)]
+                if isinstance(value, str)
+            } | {value[2:] for value in repo_interface.get("screenshots", []) if isinstance(value, str)}
+            stray = [n for n in names if not n.startswith(ALLOWED_PREFIXES) and n not in declared]
             check("repo ZIP has only plugin-surface entries", not stray, ", ".join(stray[:5]))
             forbidden = [n for n in names if n.startswith(FORBIDDEN_PREFIXES)]
             check("repo ZIP excludes repository tooling", not forbidden, ", ".join(forbidden[:5]))
@@ -370,6 +383,54 @@ def main() -> int:
         root = fixture(tmp, "no-skills", interface(), logo=png(64, 64), manifest_overrides={"skills": None})
         result = run("--root", str(root), "--draft", "--out", str(tmp / "no-skills-out"))
         check("manifest without skills fails", result.returncode == 1, result.stdout + result.stderr)
+
+        # The repository root is not a skills directory; it would ship everything.
+        root = fixture(tmp, "root-skills", interface(), logo=png(64, 64), manifest_overrides={"skills": "./"})
+        result = run("--root", str(root), "--check")
+        check("skills at the repository root fails", result.returncode == 1, result.stdout + result.stderr)
+
+        # A truncated PNG is reported, not a traceback.
+        truncated = png(64, 64)[:20]
+        root = fixture(tmp, "truncated-png", interface(), logo=truncated)
+        result = run("--root", str(root), "--check")
+        output = result.stdout + result.stderr
+        check(
+            "truncated PNG is reported cleanly",
+            result.returncode == 1 and "Traceback" not in output and "logo" in output,
+            output,
+        )
+
+        # Symlinks would ship as text files holding their target path.
+        if hasattr(os, "symlink"):
+            try:
+                root = fixture(
+                    tmp,
+                    "symlink-skill",
+                    interface(),
+                    logo=png(64, 64),
+                    symlinks={"skills/demo/linked.md": "SKILL.md"},
+                )
+                result = run("--root", str(root), "--draft", "--out", str(tmp / "symlink-skill-out"))
+                check(
+                    "symlinked skill file fails",
+                    result.returncode == 1 and "symlink" in (result.stdout + result.stderr),
+                    result.stdout + result.stderr,
+                )
+                root = fixture(
+                    tmp,
+                    "symlink-logo",
+                    interface(logo="./assets/link.png"),
+                    logo=png(64, 64),
+                    symlinks={"assets/link.png": "logo.png"},
+                )
+                result = run("--root", str(root), "--check")
+                check(
+                    "symlinked logo fails",
+                    result.returncode == 1 and "symlink" in (result.stdout + result.stderr),
+                    result.stdout + result.stderr,
+                )
+            except OSError:
+                pass  # symlinks unavailable on this platform
 
         # The MIT notice must travel with every copy.
         root = fixture(tmp, "no-license", interface(), logo=png(64, 64), license_file=False)

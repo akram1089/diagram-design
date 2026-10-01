@@ -92,6 +92,9 @@ def index_entries(root: Path, pathspecs: list[str], errors: list[str]) -> dict[s
             continue
         if mode == b"160000":  # submodule, not a file
             continue
+        if mode == b"120000":  # a symlink's blob is its target path, not content
+            errors.append(f"{path} is a symlink; commit the file itself")
+            continue
         entries[path] = blob.decode("ascii")
     for path in sorted(unmerged):
         errors.append(f"{path} has an unresolved merge conflict in the index")
@@ -140,7 +143,7 @@ def package_path(value: object, label: str, errors: list[str]) -> str | None:
 
 
 def png_size(data: bytes) -> tuple[int, int] | None:
-    if data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
         return None
     return struct.unpack(">II", data[16:24])
 
@@ -258,6 +261,9 @@ def main() -> int:
         errors.append("manifest skills is required; a plugin without skills ships nothing")
     else:
         skills_dir = package_path(manifest["skills"], "manifest skills", errors)
+        if skills_dir == ".":
+            errors.append("manifest skills must name a directory, not the repository root")
+            skills_dir = None
 
     pathspecs = [MANIFEST, *REQUIRED_FILES, *OPTIONAL_FILES, *(path for _, path in asset_paths)]
     if skills_dir:
@@ -267,7 +273,7 @@ def main() -> int:
 
     skill_files: list[str] = []
     if skills_dir:
-        prefix = "" if skills_dir == "." else skills_dir.rstrip("/") + "/"
+        prefix = skills_dir.rstrip("/") + "/"
         skill_files = sorted(p for p in tracked if p.startswith(prefix) and p != MANIFEST)
         if not any(p == "SKILL.md" or p.endswith("/SKILL.md") for p in skill_files):
             errors.append(f"no staged SKILL.md under {skills_dir}")
