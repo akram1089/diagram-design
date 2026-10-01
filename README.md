@@ -118,6 +118,8 @@ The v2.5.10 release added the final ten types above. Compare their light, dark, 
 
 ## Install
 
+Official builds come only from this repository. LittleMight, Cathryn Lavery's company, publishes the plugin directory listings; a listing under any other name is an unofficial copy. [PRIVACY.md](PRIVACY.md) lists what the skill sends over the network.
+
 **Claude Code:**
 
 ```text

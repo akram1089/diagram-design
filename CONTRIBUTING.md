@@ -33,6 +33,7 @@ Every validation gate below must pass before a PR is ready. They also run automa
 |---|---|
 | Plugin bump helper and adversarial package cases | `python3 scripts/test-plugin-package.py` |
 | Maintainer policy matches native manifests and current CI gates | `python3 scripts/test-maintainer-policy.py` |
+| OpenAI plugin directory listing limits and upload ZIP contents | `python3 scripts/test-build-openai-plugin-zip.py` |
 | Manifest versions untouched and synchronized; valid marketplace paths; packaged skill | `python3 scripts/verify-plugin-package.py --require-no-bump origin/main` |
 | Claude marketplace and plugin schema, with warnings treated as errors | `claude plugin validate . --strict` |
 | Accessible SVG contract (unit tests for the a11y linter) | `python3 scripts/test-lint-a11y.py` |
@@ -97,11 +98,18 @@ They must still name every visual type; keep fuller feature details in the skill
 frontmatter and Codex `longDescription`. The docs-sync gate checks both length
 and routing vocabulary, and the package gate keeps native descriptions aligned.
 
+The Codex `interface` block doubles as the OpenAI plugin directory listing, so
+`displayName` and `shortDescription` stay within 30 characters and
+`longDescription` within 4,000. `scripts/build-openai-plugin-zip.py --check`
+enforces those limits. The maintainer publishes the directory listing; please
+don't submit this plugin to OpenAI or any other plugin directory yourself.
+
 Run them all at once before pushing:
 
 ```bash
 python3 scripts/test-plugin-package.py \
   && python3 scripts/test-maintainer-policy.py \
+  && python3 scripts/test-build-openai-plugin-zip.py \
   && python3 scripts/verify-plugin-package.py --require-no-bump origin/main \
   && claude plugin validate . --strict \
   && python3 scripts/test-lint-a11y.py \

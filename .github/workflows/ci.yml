@@ -46,6 +46,9 @@ jobs:
       - name: Verify maintainer policy tracks package and CI truth
         run: python3 scripts/test-maintainer-policy.py
 
+      - name: Verify OpenAI plugin directory listing and upload ZIP
+        run: python3 scripts/test-build-openai-plugin-zip.py
+
       # Versions are bumped on main by the Auto Version Bump workflow after
       # each merge (ADR 0009); pull requests must leave them untouched.
       # A pull_request checkout is GitHub's merge of the PR into the current
