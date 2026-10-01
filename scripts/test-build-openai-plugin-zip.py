@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -27,7 +28,8 @@ ROOT = Path(__file__).resolve().parent.parent
 BUILDER = ROOT / "scripts" / "build-openai-plugin-zip.py"
 
 ALLOWED_PREFIXES = (
-    ".codex-plugin/plugin.json",
+    "plugin.json",
+    ".codex-plugin/",
     "skills/",
     "assets/",
     "LICENSE",
@@ -165,6 +167,51 @@ def built_zip(out: Path) -> Path:
     return zips[0]
 
 
+AGENT_PLUGINS_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+ROOT_KEYS = {"$schema", "name", "version", "description", "author", "homepage", "repository", "license", "keywords", "extensions"}
+NAME_RE = r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\Z"
+
+
+def zip_structure_problems(path: Path) -> list[str]:
+    """Upload-format problems: root manifest shape, entry types, directory entries."""
+    import re
+    import stat
+
+    problems = []
+    archive = zipfile.ZipFile(path)
+    names = archive.namelist()
+    if "plugin.json" not in names:
+        return ["no root plugin.json"]
+    root = json.loads(archive.read("plugin.json"))
+    codex = json.loads(archive.read(".codex-plugin/plugin.json"))
+    if root.get("$schema") != AGENT_PLUGINS_SCHEMA:
+        problems.append("root $schema is not the Agent Plugins 1.0.0 schema")
+    extra = set(root) - ROOT_KEYS
+    if extra:
+        problems.append(f"root plugin.json has keys the schema rejects: {sorted(extra)}")
+    if not re.match(NAME_RE, root.get("name", "")):
+        problems.append("root name does not match the schema pattern")
+    for key in ("name", "version", "description", "author"):
+        if root.get(key) != codex.get(key):
+            problems.append(f"root {key} differs from the Codex manifest")
+    if root.get("extensions", {}).get("com.openai", {}).get("interface") != codex.get("interface"):
+        problems.append("root extensions.com.openai.interface differs from the Codex interface")
+    entries = set(names)
+    for info in archive.infolist():
+        mode = info.external_attr >> 16
+        if info.is_dir():
+            if not stat.S_ISDIR(mode):
+                problems.append(f"{info.filename} lacks the directory type bit")
+        elif not stat.S_ISREG(mode):
+            problems.append(f"{info.filename} lacks the regular-file type bit")
+        parts = info.filename.rstrip("/").split("/")[:-1]
+        for depth in range(1, len(parts) + 1):
+            parent = "/".join(parts[:depth]) + "/"
+            if parent not in entries:
+                problems.append(f"missing directory entry {parent}")
+    return sorted(set(problems))
+
+
 def main() -> int:
     failures: list[str] = []
     passed = 0
@@ -192,7 +239,10 @@ def main() -> int:
         if first.returncode == 0 and second.returncode == 0:
             zip_a, zip_b = built_zip(out_a), built_zip(out_b)
             names = zipfile.ZipFile(zip_a).namelist()
+            problems = zip_structure_problems(zip_a)
+            check("repo ZIP matches the upload format", not problems, "; ".join(problems[:5]))
             for required in (
+                "plugin.json",
                 ".codex-plugin/plugin.json",
                 "skills/diagram-design/SKILL.md",
                 "LICENSE",
@@ -238,6 +288,8 @@ def main() -> int:
         check("complete fixture builds", result.returncode == 0, result.stdout + result.stderr)
         if result.returncode == 0:
             names = zipfile.ZipFile(built_zip(out)).namelist()
+            problems = zip_structure_problems(built_zip(out))
+            check("fixture ZIP matches the upload format", not problems, "; ".join(problems[:5]))
             check("fixture ZIP has logo", "assets/logo.png" in names)
             check("fixture ZIP has composer icon", "assets/icon.svg" in names)
             check("fixture ZIP excludes untracked cache", not any("__pycache__" in n for n in names))
@@ -378,6 +430,14 @@ def main() -> int:
         result = run("--root", str(root), "--draft", "--out", str(out))
         check("unsafe manifest name fails", result.returncode == 1, result.stdout + result.stderr)
         check("unsafe manifest name writes nothing outside --out", not list(tmp.glob("escaped*")))
+
+        # Names outside the Agent Plugins pattern never reach the root manifest or the filename.
+        for label, bad_name in (("trailing-newline", "demo\n"), ("double-period", "a..b"), ("double-hyphen", "a--b"), ("uppercase", "Demo")):
+            root = fixture(tmp, f"name-{label}", interface(), logo=png(64, 64), manifest_overrides={"name": bad_name})
+            result = run("--root", str(root), "--check")
+            check(f"manifest name {label} fails", result.returncode == 1, result.stdout + result.stderr)
+        check("test name pattern rejects consecutive periods", re.match(NAME_RE, "a..b") is None)
+        check("test name pattern rejects a trailing newline", re.match(NAME_RE, "demo\n") is None)
 
         # A manifest without a skills path would ship an empty plugin.
         root = fixture(tmp, "no-skills", interface(), logo=png(64, 64), manifest_overrides={"skills": None})

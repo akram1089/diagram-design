@@ -27,6 +27,7 @@ import argparse
 import io
 import json
 import re
+import stat
 import struct
 import subprocess
 import sys
@@ -58,7 +59,15 @@ REQUIRED_FILES = ("LICENSE",)
 OPTIONAL_FILES = ("THIRD_PARTY_LICENSES.md", "PRIVACY.md")
 FIXED_TIME = (1980, 1, 1, 0, 0, 0)
 UNIX_HOST = 3
-SAFE_FILENAME_PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+SAFE_FILENAME_PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\Z")
+# The upload reads package identity from a root plugin.json in the Agent Plugins
+# format, with OpenAI's listing fields under extensions["com.openai"]. That
+# schema rejects unknown top-level keys, so only these fields are copied.
+AGENT_PLUGINS_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+AGENT_PLUGINS_NAME = re.compile(r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\Z")
+ROOT_MANIFEST_FIELDS = ("name", "version", "description", "author", "homepage", "repository", "license", "keywords")
+FILE_ATTRS = (stat.S_IFREG | 0o644) << 16
+DIR_ATTRS = (stat.S_IFDIR | 0o755) << 16 | 0x10  # 0x10 is the MS-DOS directory flag
 
 
 def git(root: Path, *args: str, data: bytes | None = None) -> bytes:
@@ -218,6 +227,14 @@ def check_assets(
     return assets
 
 
+def root_manifest(manifest: dict) -> bytes:
+    """The Agent Plugins plugin.json for the upload, derived from the Codex manifest."""
+    root = {"$schema": AGENT_PLUGINS_SCHEMA}
+    root.update({field: manifest[field] for field in ROOT_MANIFEST_FIELDS if field in manifest})
+    root["extensions"] = {"com.openai": {"interface": manifest["interface"]}}
+    return (json.dumps(root, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+
+
 def fail(errors: list[str]) -> int:
     print(f"build-openai-plugin-zip: {len(errors)} problem(s):", file=sys.stderr)
     for error in errors:
@@ -253,6 +270,8 @@ def main() -> int:
         if not isinstance(value, str) or not SAFE_FILENAME_PART.match(value):
             errors.append(f"manifest {field} {value!r} is not a safe filename part")
 
+    if isinstance(manifest.get("name"), str) and not AGENT_PLUGINS_NAME.match(manifest["name"]):
+        errors.append(f"manifest name {manifest['name']!r} does not match the Agent Plugins name pattern")
     check_listing(interface, errors)
     asset_paths = declared_assets(interface, errors, pending)
 
@@ -306,15 +325,27 @@ def main() -> int:
     out_dir = (args.out or root / "dist").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     target = out_dir / f"{manifest['name']}-{manifest['version']}-openai.zip"
+    payload = dict(zip(files, contents))
+    payload["plugin.json"] = root_manifest(manifest)
+    directories = {
+        "/".join(path.split("/")[:depth]) + "/"
+        for path in payload
+        for depth in range(1, path.count("/") + 1)
+    }
     with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for path, data in zip(files, contents):
+        for path in sorted(set(payload) | directories):
             info = zipfile.ZipInfo(path, date_time=FIXED_TIME)
-            info.compress_type = zipfile.ZIP_DEFLATED
             info.create_system = UNIX_HOST
-            info.external_attr = 0o644 << 16
-            archive.writestr(info, data)
+            if path in directories:
+                info.compress_type = zipfile.ZIP_STORED
+                info.external_attr = DIR_ATTRS
+                archive.writestr(info, b"")
+            else:
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = FILE_ATTRS
+                archive.writestr(info, payload[path])
     kind = "draft " if pending else ""
-    print(f"OK built {kind}{target} ({len(files)} files, {target.stat().st_size:,} bytes)")
+    print(f"OK built {kind}{target} ({len(payload)} files, {target.stat().st_size:,} bytes)")
     if pending:
         print(f"Draft only: missing {', '.join(pending)}; do not submit this ZIP.")
     return 0
