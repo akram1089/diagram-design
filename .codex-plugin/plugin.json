@@ -40,6 +40,8 @@
       "Create a flowchart for this decision process.",
       "Redraw this Mermaid diagram at the right size and detail level."
     ],
-    "brandColor": "#b5523a"
+    "brandColor": "#b5523a",
+    "logo": "./assets/logo.png",
+    "composerIcon": "./assets/composer-icon.png"
   }
 }
