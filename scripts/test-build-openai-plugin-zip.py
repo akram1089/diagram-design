@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -168,7 +169,7 @@ def built_zip(out: Path) -> Path:
 
 AGENT_PLUGINS_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 ROOT_KEYS = {"$schema", "name", "version", "description", "author", "homepage", "repository", "license", "keywords", "extensions"}
-NAME_RE = r"^(?!.*(?:--|\\.\\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$"
+NAME_RE = r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\Z"
 
 
 def zip_structure_problems(path: Path) -> list[str]:
@@ -429,6 +430,14 @@ def main() -> int:
         result = run("--root", str(root), "--draft", "--out", str(out))
         check("unsafe manifest name fails", result.returncode == 1, result.stdout + result.stderr)
         check("unsafe manifest name writes nothing outside --out", not list(tmp.glob("escaped*")))
+
+        # Names outside the Agent Plugins pattern never reach the root manifest or the filename.
+        for label, bad_name in (("trailing-newline", "demo\n"), ("double-period", "a..b"), ("double-hyphen", "a--b"), ("uppercase", "Demo")):
+            root = fixture(tmp, f"name-{label}", interface(), logo=png(64, 64), manifest_overrides={"name": bad_name})
+            result = run("--root", str(root), "--check")
+            check(f"manifest name {label} fails", result.returncode == 1, result.stdout + result.stderr)
+        check("test name pattern rejects consecutive periods", re.match(NAME_RE, "a..b") is None)
+        check("test name pattern rejects a trailing newline", re.match(NAME_RE, "demo\n") is None)
 
         # A manifest without a skills path would ship an empty plugin.
         root = fixture(tmp, "no-skills", interface(), logo=png(64, 64), manifest_overrides={"skills": None})

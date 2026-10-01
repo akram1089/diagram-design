@@ -59,12 +59,12 @@ REQUIRED_FILES = ("LICENSE",)
 OPTIONAL_FILES = ("THIRD_PARTY_LICENSES.md", "PRIVACY.md")
 FIXED_TIME = (1980, 1, 1, 0, 0, 0)
 UNIX_HOST = 3
-SAFE_FILENAME_PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+SAFE_FILENAME_PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 # The upload reads package identity from a root plugin.json in the Agent Plugins
 # format, with OpenAI's listing fields under extensions["com.openai"]. That
 # schema rejects unknown top-level keys, so only these fields are copied.
 AGENT_PLUGINS_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
-AGENT_PLUGINS_NAME = re.compile(r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
+AGENT_PLUGINS_NAME = re.compile(r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\Z")
 ROOT_MANIFEST_FIELDS = ("name", "version", "description", "author", "homepage", "repository", "license", "keywords")
 FILE_ATTRS = (stat.S_IFREG | 0o644) << 16
 DIR_ATTRS = (stat.S_IFDIR | 0o755) << 16 | 0x10  # 0x10 is the MS-DOS directory flag
