@@ -65,6 +65,7 @@ Every validation gate below must pass before a PR is ready. They also run automa
 | Label geometry checker behaves (pass + adversarial cases) | `python3 scripts/test-verify-geometry.py` |
 | Architecture delta snapshots preserve identity, ledger coverage, signatures, positions, and relationship endpoints | `python3 scripts/verify-architecture-delta.py --all` |
 | Architecture delta checker behaves (pass + adversarial cases) | `python3 scripts/test-verify-architecture-delta.py` |
+| Exploded examples are what the builder produces | `python3 scripts/build-exploded-examples.py --check` |
 | Exploded axonometric silhouettes match their declared boxes, gaps are equal, and labels sit in one clear column | `python3 scripts/verify-exploded.py --all` |
 | Exploded axonometric checker behaves (pass + adversarial cases) | `python3 scripts/test-verify-exploded.py` |
 | Traceable block decomposition registries have unique IDs, resolving parents, names, and no cycles | `python3 scripts/verify-block-registry.py --all` |
@@ -151,6 +152,7 @@ python3 scripts/test-plugin-package.py \
   && python3 scripts/test-verify-geometry.py \
   && python3 scripts/verify-architecture-delta.py --all \
   && python3 scripts/test-verify-architecture-delta.py \
+  && python3 scripts/build-exploded-examples.py --check \
   && python3 scripts/verify-exploded.py --all \
   && python3 scripts/test-verify-exploded.py \
   && python3 scripts/verify-block-registry.py --all \

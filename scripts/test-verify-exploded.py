@@ -110,6 +110,18 @@ def main() -> int:
         "corner arc off the 2:1 ellipse": (
             once(r'(data-role="silhouette" d="M [^"]*?A )(\d+(?:\.\d+)?) (\d+(?:\.\d+)?)', r"\g<1>20 10", stack),
             "is not the 2:1 ellipse"),
+        "corner arc sweeps the wrong way": (
+            once(r'(data-role="silhouette" d="M [^"]*?A \d+(?:\.\d+)? \d+(?:\.\d+)? 0 0 )1', r"\g<1>0", stack),
+            "corner arc flags"),
+        "transform moves a part": (
+            once(r'(data-part="logic")', r'\1 transform="translate(0 -12)"', stack),
+            "carries transform="),
+        "transform on a silhouette": (
+            once(r'(data-role="silhouette")', r'\1 transform="translate(4 0)"', stack),
+            "carries transform="),
+        "duplicate label for one part": (
+            once(r'(<g data-role="label">.*?</g>)', lambda m: m.group(1) + m.group(1), stack, re.S),
+            "has more than one label"),
         "silhouette missing": (
             once(r'data-role="silhouette"', 'data-role="outline"', stack),
             "has no data-role=silhouette"),

@@ -12,8 +12,9 @@ and fails when the drawing and the declaration disagree:
 - a leader that is not horizontal, does not start at its part's right
   extreme, or crosses another part; labels outside one column, closer than
   36px, or longer than two words;
-- more than one focal part, a trace line that is not vertical and dashed, or
-  an animated part whose lift is not its exploded z minus its closed z.
+- more than one focal part, a trace line that is not vertical and dashed, an
+  SVG transform anywhere in the figure, a part with two labels, or an
+  animated part whose lift is not its exploded z minus its closed z.
 
     python3 scripts/verify-exploded.py --all
     python3 scripts/verify-exploded.py skills/diagram-design/assets/example-exploded.html
@@ -137,7 +138,7 @@ def silhouette_poly(origin, r, z0, z1, n=24):
 
 
 def parse_path(d):
-    """Return (endpoints, is_arc, arc radii) for an absolute M/L/A/Z path."""
+    """Return (endpoints, is_arc, arcs as (rx, ry, rotation, large-arc, sweep)) for an absolute M/L/A/Z path."""
     tokens = re.findall(r"[MLAZ]|-?\d+(?:\.\d+)?", d)
     pts, arcs, radii = [], [], []
     i = 0
@@ -148,7 +149,7 @@ def parse_path(d):
             arcs.append(False)
             i += 3
         elif cmd == "A":
-            radii.append((float(tokens[i + 1]), float(tokens[i + 2])))
+            radii.append(tuple(float(tokens[i + k]) for k in range(1, 6)))
             pts.append((float(tokens[i + 6]), float(tokens[i + 7])))
             arcs.append(True)
             i += 8
@@ -238,9 +239,15 @@ def verify_source(source: str, name: str) -> list[str]:
                 errors.append(f"{name}: part {p['key']!r} silhouette vertex {i} is at {g}; iso() of its box puts it at ({w[0]:.2f}, {w[1]:.2f})")
                 break
         r = p["rect"][4]
-        for rx, ry in radii:
+        for rx, ry, rotation, large, sweep in radii:
             if abs(rx - r * math.sqrt(2)) > TOL or abs(ry - r / math.sqrt(2)) > TOL:
-                errors.append(f"{name}: part {p['key']!r} corner arc {rx}x{ry} is not the 2:1 ellipse of radius {r} ({r * math.sqrt(2):.2f}x{r / math.sqrt(2):.2f})")
+                errors.append(f"{name}: part {p['key']!r} corner arc {rx:g}x{ry:g} is not the 2:1 ellipse of radius {r:g} ({r * math.sqrt(2):.2f}x{r / math.sqrt(2):.2f})")
+                break
+            # Both silhouette walks run clockwise on screen through quarter corners, so every
+            # arc is unrotated, short, and sweeps positive. A flipped flag bends the corner
+            # inward while its endpoints and radii still match.
+            if rotation != 0 or large != 0 or sweep != 1:
+                errors.append(f"{name}: part {p['key']!r} corner arc flags are rotation {rotation:g}, large-arc {large:g}, sweep {sweep:g}; a projected corner is 0 0 1")
                 break
 
     # 2. Levels, equal gaps, the gap floor, and the bottom staying put.
@@ -267,8 +274,9 @@ def verify_source(source: str, name: str) -> list[str]:
     if gap + TOL < floor:
         errors.append(f"{name}: gap {gap:g} is under max(0.5 x top-face height, 3 x thickness) = {floor:g}")
 
-    # 3. Labels: one column, horizontal leaders from each part's right extreme, no crossings.
+    # 3. Labels: exactly one per part, one column, horizontal leaders from each part's right extreme.
     labels = {}
+    part_names = {p["name"] for p in parts}
     for el in fig.walk():
         if el.tag == "g" and el.attrs.get("data-role") == "label":
             name_el = next((c for c in el.walk() if c.tag == "text" and c.attrs.get("data-role") == "name"), None)
@@ -276,7 +284,14 @@ def verify_source(source: str, name: str) -> list[str]:
             if name_el is None or leader is None:
                 errors.append(f"{name}: a label group needs a data-role=name text and a data-role=leader line")
                 continue
-            labels[name_el.text.strip()] = (name_el, leader)
+            text = name_el.text.strip()
+            if text in labels:
+                errors.append(f"{name}: part {text!r} has more than one label; each part gets exactly one")
+                continue
+            if text not in part_names:
+                errors.append(f"{name}: label {text!r} names no declared part")
+                continue
+            labels[text] = (name_el, leader)
     polys = {p["key"]: silhouette_poly(origin, p["rect"], p["z"], p["z"] + p["t"]) for p in parts}
     columns, anchor_ys = set(), []
     for p in parts:
@@ -320,7 +335,12 @@ def verify_source(source: str, name: str) -> list[str]:
             if not el.attrs.get("stroke-dasharray"):
                 errors.append(f"{name}: trace line must be dashed")
 
-    # 6. Animated parts lift by exactly their explode distance.
+    # 6. Geometry comes from coordinates alone: no SVG transform anywhere in the figure.
+    for el in [fig, *fig.walk()]:
+        if "transform" in el.attrs:
+            errors.append(f"{name}: <{el.tag}> carries transform={el.attrs['transform']!r}; position comes from projected coordinates")
+
+    # 7. Animated parts lift by exactly their explode distance.
     for p in parts:
         style = p["el"].attrs.get("style", "")
         if "data-motion-item" in p["el"].attrs:
