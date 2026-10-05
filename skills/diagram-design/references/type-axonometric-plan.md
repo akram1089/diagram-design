@@ -27,7 +27,7 @@ Every element is a rounded prism standing on the plate: `r = 0` for walls, furni
 - **Walls:** 6 units thick and cut at desk height, about 22 units, so no wall hides a room. Doors are gaps in a wall. Walls meet without overlapping: run one wall through a junction and stop the other at its face.
 - **Furniture and buildings:** Boxes on the plate with the house face shading (`type-exploded.md` § Faces and lines). Heights are to scale with each other. Two footprints never overlap.
 - **Flat marks:** Roads, paths, and floor tints sit on the plate's top face as flat fills (`ink` at 0.07) with no thickness. A dashed centre line (`ink` at 0.25, `6,5`) may mark a road.
-- **Trees:** A canopy cylinder on a short trunk, canopy top in `rule-solid` light (`#bfc0c0`) or `soft` dark (`#8e98ac`). Trees are planting, so keep them small and off every footprint.
+- **Trees:** A canopy cylinder 8 units up on a short trunk, canopy top in `rule-solid` light (`#bfc0c0`) or `soft` dark (`#8e98ac`). Trees are planting, so keep them small and off every footprint.
 - **Paint order:** The plate first, then flat marks, then every box back to front. Sort with a topological order: box A paints before box B when A lies entirely behind B (`A.x1 <= B.x0` or `A.y1 <= B.y0`) and their screen outlines overlap. A plain `x + y` sort fails on long walls.
 - **Frame:** The canvas is 1000 wide and the plate is centred. The viewBox height follows the plate and its tallest box plus a 48px top margin.
 
@@ -52,9 +52,9 @@ A site that is built in phases can reveal its buildings phase by phase with the 
 
 - The figure: one `<g data-axo-plan data-origin="ox oy">`.
 - The plate: one `<g data-plate data-rect="x0 y0 x1 y1 r" data-z="0" data-t="t">`.
-- Each box: a `<g data-box>` with `data-rect`, `data-z` (the plate top), `data-h`, `data-kind` (`wall`, `furniture`, `building`, `tree`), and for a building `data-name`. Its first path is `data-role="silhouette"`.
+- Each box: a `<g data-box>` with `data-rect`, `data-z` (the plate top, or 8 above it for a tree canopy), `data-h`, `data-kind` (`wall`, `furniture`, `building`, `tree`), and for a building `data-name`. Its first path is `data-role="silhouette"`.
 - Each room: a `<g data-room data-name data-rect>`.
-- Each tag: a `<g data-role="tag" data-name data-at="x y z">` with a backing `<rect>` and a `<text data-role="name">`.
+- Each tag: a `<g data-role="tag" data-name data-at="x y z">` with a backing `<rect>` and a `<text data-role="name">`. The point sits inside the room it names at the plate top, or on the building's roof.
 - The focal room or building carries `data-focal`.
 
 ## Anti-patterns

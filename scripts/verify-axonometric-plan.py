@@ -9,7 +9,9 @@ projection in verify-exploded.py rather than the example builder, and fails on:
 - a silhouette vertex, corner arc, or arc flag off the projection of its box;
 - a box outside the plate, or two box footprints that overlap;
 - paint order: a box drawn after one that sits in front of it on screen;
-- a tag that is not centred on the plan point it declares, two tags that
+- a box that floats above or sinks into the plate;
+- a tag that is not centred on the plan point it declares, a tag whose
+  point is not inside the room or on the roof it names, two tags that
   overlap, a tag longer than two words, a room or building with no tag or
   with two;
 - more than one focal room or building, an SVG transform, or a style
@@ -30,6 +32,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "skills/diagram-design/assets"
 TOL = 0.05
+TRUNK = 8  # a tree canopy stands this far above the plate on its trunk
 
 _spec = importlib.util.spec_from_file_location("verify_exploded", Path(__file__).with_name("verify-exploded.py"))
 vx = importlib.util.module_from_spec(_spec)
@@ -129,8 +132,12 @@ def verify_source(source: str, name: str) -> list[str]:
                           name=el.attrs.get("data-name", ""), focal="data-focal" in el.attrs))
         check_silhouette(el, origin, rect, z, z + h, f"{name}: {label}", errors)
 
-    # Boxes stand inside the plate and never share floor area.
+    # Boxes stand on the plate top (a canopy on its trunk), inside the plate, and never share floor area.
+    plate_top = 0 + pt
     for b in boxes:
+        want_z = plate_top + (TRUNK if b["kind"] == "tree" else 0)
+        if abs(b["z"] - want_z) > TOL:
+            errors.append(f"{name}: {b['label']} sits at z {b['z']:g}; it must stand on the plate top at z {want_z:g}")
         x0, y0, x1, y1, _ = b["rect"]
         if x0 < plate[0] - TOL or y0 < plate[1] - TOL or x1 > plate[2] + TOL or y1 > plate[3] + TOL:
             errors.append(f"{name}: {b['label']} stands outside the plate")
@@ -153,6 +160,7 @@ def verify_source(source: str, name: str) -> list[str]:
 
     # Tags: centred on their point, one per named room or building, never overlapping.
     tags = []
+    places: dict[str, list] = {}
     for el in fig.walk():
         if el.tag != "g" or el.attrs.get("data-role") != "tag":
             continue
@@ -173,6 +181,7 @@ def verify_source(source: str, name: str) -> list[str]:
         if el.attrs.get("data-name") != label:
             errors.append(f"{name}: tag text {label!r} disagrees with its data-name {el.attrs.get('data-name')!r}")
         tags.append((label, (rx, ry, rx + rw, ry + rh)))
+        places[label] = places.get(label, []) + [at]
     for i, (la, ra) in enumerate(tags):
         for lb, rb in tags[i + 1:]:
             if overlaps(ra, rb):
@@ -188,6 +197,25 @@ def verify_source(source: str, name: str) -> list[str]:
     for label in counts:
         if label not in named:
             errors.append(f"{name}: tag {label!r} names no room or building")
+
+    # Each tag stands on the thing it names: inside its room on the floor, or on its building's roof.
+    targets = {}
+    for el in fig.walk():
+        if el.tag == "g" and "data-room" in el.attrs:
+            rect = numbers(el.attrs.get("data-rect"), 5, f"{name}: room data-rect", errors)
+            if rect is not None:
+                targets[el.attrs["data-name"]] = (rect, plate_top, "room")
+    for b in boxes:
+        if b["kind"] == "building":
+            targets[b["name"]] = (b["rect"], b["z"] + b["h"], "roof")
+    for label, points in places.items():
+        if label not in targets:
+            continue
+        rect, z, where = targets[label]
+        for at in points:
+            inside = rect[0] + TOL < at[0] < rect[2] - TOL and rect[1] + TOL < at[1] < rect[3] - TOL
+            if not inside or abs(at[2] - z) > TOL:
+                errors.append(f"{name}: tag {label!r} stands at {at}; it must sit inside its {where} {rect[:4]} at z {z:g}")
 
     focal = [el for el in fig.walk() if el.tag == "g" and "data-focal" in el.attrs]
     if len(focal) > 1:

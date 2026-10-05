@@ -81,6 +81,28 @@ def main() -> int:
     crowded = module.MINIMAL.format(eyebrow=module.EYEBROW, title=plan.title, font=module.FONT_LINK, slug="mutant",
                                     desc=plan.desc, vh=vh, body=body, **{k: sk[k] for k in ("paper", "ink", "muted", "accent")})
 
+    def build(plan):
+        body, vh = module.build_svg(plan, "light", False, "mutant")
+        return module.MINIMAL.format(eyebrow=module.EYEBROW, title=plan.title, font=module.FONT_LINK, slug="mutant",
+                                     desc=plan.desc, vh=vh, body=body, **{k: sk[k] for k in ("paper", "ink", "muted", "accent")})
+
+    # A room tag moved onto the next room, still centred on its own declared point.
+    office_plan = module.office()
+    next(r for r in office_plan.rooms if r.name == "Booth").tag_at = (40, 190)
+    wrong_room = build(office_plan)
+    # A building tag moved onto another roof.
+    site = module.campus()
+    next(b for b in site.boxes if b.name == "Labs").tag_at = (75, 70)
+    wrong_roof = build(site)
+
+    # A desk lifted 10 units off the floor, with a silhouette redrawn to match its new height,
+    # so floating is the only thing wrong with it.
+    origin = tuple(float(v) for v in re.search(r'data-axo-plan data-origin="([^"]+)"', office).group(1).split())
+    m = re.search(r'<g data-box data-rect="24 28 68 52 0" data-z="(\d+)" data-h="(\d+)"[^>]*><path data-role="silhouette" d="([^"]+)"', office)
+    z0, h = float(m.group(1)), float(m.group(2))
+    lifted = module.prism(module.Proj(*origin), module.Rect(24, 28, 68, 52, 0), z0 + 10, z0 + 10 + h)["sil"]
+    floating = office.replace(m.group(0), m.group(0).replace(f'data-z="{m.group(1)}"', f'data-z="{z0 + 10:g}"').replace(m.group(3), lifted), 1)
+
     first_box = re.search(r'<g data-box [^>]*>.*?</g>', office, re.S).group(0)
     booth_tag = re.search(r'<g data-role="tag" data-name="Booth".*?</g>', office, re.S).group(0)
 
@@ -122,6 +144,9 @@ def main() -> int:
         "style positions a box": (
             once(r'(<g data-box )', r'\1style="translate: 0 -8px" ', office),
             "carries style="),
+        "room tag on another room": (wrong_room, "must sit inside its room"),
+        "building tag on another roof": (wrong_roof, "must sit inside its roof"),
+        "box floating off the plate": (floating, "it must stand on the plate top"),
         "silhouette missing": (
             once(r'data-box ([^>]*)><path data-role="silhouette"', r'data-box \1><path data-role="outline"', office),
             "has no data-role=silhouette"),
