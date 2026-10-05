@@ -106,11 +106,13 @@ Every visual type ships in three static variants: minimal light, minimal dark, a
 <tr>
   <td align="center" width="33%"><a href="docs/screenshots/waterfall.png"><img src="docs/screenshots/thumbs/waterfall.webp" alt="Waterfall"></a><br><b>Waterfall</b><br><sub>Running total + signed bridges</sub></td>
   <td align="center" width="33%"><a href="docs/screenshots/architecture-delta.png"><img src="docs/screenshots/thumbs/architecture-delta.webp" alt="Architecture delta"></a><br><b>Architecture delta</b><br><sub>Before · Changes · After topology</sub></td>
-  <td align="center" width="33%"></td>
+  <td align="center" width="33%"><a href="docs/screenshots/exploded.png"><img src="docs/screenshots/thumbs/exploded.webp" alt="Exploded axonometric"></a><br><b>Exploded axonometric</b><br><sub>Parts pulled apart on one axis</sub></td>
 </tr>
 </table>
 
 Architecture delta compares synchronized topologies through a Before · Changes · After ledger of added, removed, changed, moved, and rewired objects. See its [reference](skills/diagram-design/references/type-architecture-delta.md) and [order-fulfilment example](skills/diagram-design/assets/example-architecture-delta.html). Attribute-only comparisons remain tables; a single snapshot uses Architecture.
+
+Exploded axonometric draws one object in 2:1 dimetric projection with its parts lifted apart at equal gaps: a [phone teardown](skills/diagram-design/assets/example-exploded-phone.html), an [unboxing](skills/diagram-design/assets/example-exploded-unboxing.html), or an [app stack](skills/diagram-design/assets/example-exploded.html). Every coordinate comes from one projection function, and the [animated phone](skills/diagram-design/assets/example-exploded-phone-animated.html) opens assembled and explodes once. See its [reference](skills/diagram-design/references/type-exploded.md).
 
 The v2.5.10 release added ten layout grammars. Compare their light, dark, and full-editorial variants in the [30-variant contact sheet](.github/pr-previews/editorial-diagrams-2.5.10.jpg).
 
@@ -442,6 +444,7 @@ diagram-design/
 │       │   ├── type-tree.md
 │       │   ├── type-org-chart.md
 │       │   ├── type-layers.md
+│       │   ├── type-exploded.md
 │       │   ├── type-venn.md
 │       │   ├── type-pyramid.md
 │       │   ├── type-sankey.md
@@ -577,6 +580,7 @@ At startup, the agent sees only the skill name and description. When a request m
 | "Make me a flowchart" | `SKILL.md` + `references/type-flowchart.md` |
 | "Build an architecture diagram" | `SKILL.md` + `references/type-architecture.md` |
 | "Show what was added, removed, changed, moved, or rewired in this migration" | `SKILL.md` + `references/type-architecture-delta.md` |
+| "Show what's inside this device, exploded" | `SKILL.md` + `references/type-exploded.md` |
 | "Compare why these two policy requests differ" | `SKILL.md` + `references/semantic-patterns.md` + `references/type-flowchart.md` |
 | "Animate that policy trace" | Prior selection + `references/animation.md` |
 | "Onboard this skill to my site" | `SKILL.md` + `references/onboarding.md` + `references/style-guide.md` |

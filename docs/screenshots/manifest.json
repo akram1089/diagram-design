@@ -165,6 +165,15 @@
       "height": 1202
     },
     {
+      "slug": "exploded",
+      "source": "skills/diagram-design/assets/example-exploded.html",
+      "screenshot": "docs/screenshots/exploded.png",
+      "source_sha256": "164bee35a19956151cb0c3043ac41054de9d5ae6dfcf0ed2c2c211d16218604d",
+      "screenshot_sha256": "e835ddfc5e9bf34191e410fe2d7020ed9340b34535647964abdba82ff68baa9c",
+      "width": 2400,
+      "height": 1336
+    },
+    {
       "slug": "venn",
       "source": "skills/diagram-design/assets/example-venn.html",
       "screenshot": "docs/screenshots/venn.png",

@@ -97,6 +97,15 @@
       "thumb_sha256": "cf2a816b86ca379f13ac1cb9de1bc1619eee598237e81a582d8dff239f24c822"
     },
     {
+      "thumb": "exploded.webp",
+      "source": "docs/screenshots/exploded.png",
+      "source_sha256": "e835ddfc5e9bf34191e410fe2d7020ed9340b34535647964abdba82ff68baa9c",
+      "width": 600,
+      "height": 334,
+      "quality": 82,
+      "thumb_sha256": "2dd0e991d4dce224b16effe9197dd597aab8b8847d09dbaf654d63751f6dd85b"
+    },
+    {
       "thumb": "fishbone.webp",
       "source": "docs/screenshots/fishbone.png",
       "source_sha256": "c634bb13367a2299d862dc84f0046017d5067ab64498784024a220576b473f33",

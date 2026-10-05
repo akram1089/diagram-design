@@ -410,6 +410,16 @@ jobs:
         id: architecture_delta_tests
         run: python scripts/test-verify-architecture-delta.py
 
+      - name: Verify exploded axonometric geometry
+        if: always()
+        id: exploded
+        run: python scripts/verify-exploded.py --all
+
+      - name: Verify exploded axonometric checker
+        if: always()
+        id: exploded_tests
+        run: python scripts/test-verify-exploded.py
+
       - name: Verify tone claims against the ramps they describe
         if: always()
         id: skin_polarity
@@ -539,6 +549,8 @@ jobs:
           echo "| Beeswarm Checker | ${{ steps.beeswarm_tests.outcome == 'success' && '✅ Passed' || (steps.beeswarm_tests.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Architecture Delta Snapshots & Ledger | ${{ steps.architecture_delta.outcome == 'success' && '✅ Passed' || (steps.architecture_delta.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Architecture Delta Checker | ${{ steps.architecture_delta_tests.outcome == 'success' && '✅ Passed' || (steps.architecture_delta_tests.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Exploded Axonometric Geometry | ${{ steps.exploded.outcome == 'success' && '✅ Passed' || (steps.exploded.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Exploded Axonometric Checker | ${{ steps.exploded_tests.outcome == 'success' && '✅ Passed' || (steps.exploded_tests.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tone Claim vs Ramp Polarity | ${{ steps.skin_polarity.outcome == 'success' && '✅ Passed' || (steps.skin_polarity.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Skin Polarity Checker | ${{ steps.skin_polarity_tests.outcome == 'success' && '✅ Passed' || (steps.skin_polarity_tests.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Primitive Icons & Documentation | ${{ steps.icons.outcome == 'success' && '✅ Passed' || (steps.icons.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
