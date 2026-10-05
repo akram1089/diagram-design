@@ -46,7 +46,7 @@ def builder():
 def page(module, fig, slug="mutant"):
     body, vh, _ = module.build_svg(fig, "light", False, slug)
     sk = module.SKINS["light"]
-    return module.MINIMAL.format(title=fig.title, font=module.FONT_LINK, slug=slug, desc=fig.desc, vh=vh, body=body,
+    return module.MINIMAL.format(eyebrow=module.EYEBROW, title=fig.title, font=module.FONT_LINK, slug=slug, desc=fig.desc, vh=vh, body=body,
                                  **{k: sk[k] for k in ("paper", "ink", "muted", "accent")})
 
 

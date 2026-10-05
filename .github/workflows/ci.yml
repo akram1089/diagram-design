@@ -425,6 +425,21 @@ jobs:
         id: exploded_tests
         run: python scripts/test-verify-exploded.py
 
+      - name: Verify axonometric plan examples match their builder
+        if: always()
+        id: axo_plan_build
+        run: python scripts/build-axonometric-plan-examples.py --check
+
+      - name: Verify axonometric plan geometry and tags
+        if: always()
+        id: axo_plan
+        run: python scripts/verify-axonometric-plan.py --all
+
+      - name: Verify axonometric plan checker
+        if: always()
+        id: axo_plan_tests
+        run: python scripts/test-verify-axonometric-plan.py
+
       - name: Verify tone claims against the ramps they describe
         if: always()
         id: skin_polarity
@@ -557,6 +572,9 @@ jobs:
           echo "| Exploded Examples Match Builder | ${{ steps.exploded_build.outcome == 'success' && '✅ Passed' || (steps.exploded_build.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Exploded Axonometric Geometry | ${{ steps.exploded.outcome == 'success' && '✅ Passed' || (steps.exploded.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Exploded Axonometric Checker | ${{ steps.exploded_tests.outcome == 'success' && '✅ Passed' || (steps.exploded_tests.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Axonometric Plan Examples Match Builder | ${{ steps.axo_plan_build.outcome == 'success' && '✅ Passed' || (steps.axo_plan_build.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Axonometric Plan Geometry & Tags | ${{ steps.axo_plan.outcome == 'success' && '✅ Passed' || (steps.axo_plan.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Axonometric Plan Checker | ${{ steps.axo_plan_tests.outcome == 'success' && '✅ Passed' || (steps.axo_plan_tests.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tone Claim vs Ramp Polarity | ${{ steps.skin_polarity.outcome == 'success' && '✅ Passed' || (steps.skin_polarity.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Skin Polarity Checker | ${{ steps.skin_polarity_tests.outcome == 'success' && '✅ Passed' || (steps.skin_polarity_tests.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Primitive Icons & Documentation | ${{ steps.icons.outcome == 'success' && '✅ Passed' || (steps.icons.outcome == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY

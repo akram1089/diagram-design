@@ -174,6 +174,15 @@
       "height": 1336
     },
     {
+      "slug": "axonometric-plan",
+      "source": "skills/diagram-design/assets/example-axonometric-plan.html",
+      "screenshot": "docs/screenshots/axonometric-plan.png",
+      "source_sha256": "06f0e85d99c7e59b52d0bcbdb491eb5ec0a51a6036879fe6d809626ffa2b7fac",
+      "screenshot_sha256": "eeeaa6d8f100b50854f1d452b253807c2ad4abc9b450bce854c04fdb95fbb7b1",
+      "width": 2400,
+      "height": 1078
+    },
+    {
       "slug": "venn",
       "source": "skills/diagram-design/assets/example-venn.html",
       "screenshot": "docs/screenshots/venn.png",
