@@ -482,6 +482,10 @@ L-.next candidate.->M
 N-.a b.->O-.c d.->P
 Q o-.o p.-o R
 Ao-.x y.->S
+T--x marks-->U
+V--x(a)-->W
+Xa==x marks==>Ya
+Xb==o(a)==>Yb
 """,
         encoding="utf-8",
     )
@@ -491,7 +495,7 @@ Ao-.x y.->S
     compact_issue_ids = sorted(node["id"] for node in compact_issue["nodes"])
     if compact_issue_ids != [
         "A", "Ao", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
-        "N", "O", "P", "Q", "R", "S",
+        "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "Xa", "Xb", "Ya", "Yb",
     ]:
         fail(
             "a compact label with whitespace or brackets materialized phantom "
@@ -520,6 +524,10 @@ Ao-.x y.->S
         ("O", "P", "c d", "dashed", "arrow", False),
         ("Q", "R", "o p", "dashed", "circle", True),
         ("Ao", "S", "x y", "dashed", "arrow", False),
+        ("T", "U", "x marks", "solid", "arrow", False),
+        ("V", "W", "x(a)", "solid", "arrow", False),
+        ("Xa", "Ya", "x marks", "thick", "arrow", False),
+        ("Xb", "Yb", "o(a)", "thick", "arrow", False),
     ]:
         fail(
             "compact dash/equals labels with whitespace or brackets were not "
