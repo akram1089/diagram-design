@@ -467,6 +467,65 @@ W----->X
             f"style/bidirectional semantics: {compact_dotted_space_edges}"
         )
 
+    # Remaining #209 forms: compact dash/equals labels with whitespace or
+    # brackets, the dotted rows from the same report, and the two shapes that
+    # must stay unlabeled (`A --o B --> C`, `A----->B`).
+    compact_issue_file = tmp / "compact-issue-209.mmd"
+    compact_issue_file.write_text(
+        """flowchart LR
+A--f(x)-->B
+C==a b==>D
+E--g[x]-->F
+G --o H --> I
+J----->K
+L-.next candidate.->M
+N-.a b.->O-.c d.->P
+Q o-.o p.-o R
+Ao-.x y.->S
+""",
+        encoding="utf-8",
+    )
+    compact_issue = json.loads(
+        run_extract([str(compact_issue_file), "--json"])
+    )["diagrams"][0]
+    compact_issue_ids = sorted(node["id"] for node in compact_issue["nodes"])
+    if compact_issue_ids != [
+        "A", "Ao", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+        "N", "O", "P", "Q", "R", "S",
+    ]:
+        fail(
+            "a compact label with whitespace or brackets materialized phantom "
+            f"nodes: {compact_issue_ids}"
+        )
+    compact_issue_edges = [
+        (
+            edge["source"],
+            edge["target"],
+            edge["label"],
+            edge["style"],
+            edge["arrowhead"],
+            edge["bidirectional"],
+        )
+        for edge in compact_issue["edges"]
+    ]
+    if compact_issue_edges != [
+        ("A", "B", "f(x)", "solid", "arrow", False),
+        ("C", "D", "a b", "thick", "arrow", False),
+        ("E", "F", "g[x]", "solid", "arrow", False),
+        ("G", "H", "", "solid", "circle", False),
+        ("H", "I", "", "solid", "arrow", False),
+        ("J", "K", "", "solid", "arrow", False),
+        ("L", "M", "next candidate", "dashed", "arrow", False),
+        ("N", "O", "a b", "dashed", "arrow", False),
+        ("O", "P", "c d", "dashed", "arrow", False),
+        ("Q", "R", "o p", "dashed", "circle", True),
+        ("Ao", "S", "x y", "dashed", "arrow", False),
+    ]:
+        fail(
+            "compact dash/equals labels with whitespace or brackets were not "
+            f"retained, or an unlabeled chain was misread: {compact_issue_edges}"
+        )
+
     modern_file = tmp / "modern-flowchart.mmd"
     modern_file.write_text(
         '''flowchart LR
