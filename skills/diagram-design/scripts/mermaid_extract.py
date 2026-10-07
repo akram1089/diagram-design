@@ -620,25 +620,6 @@ def _operator_style(token: str) -> tuple[str, str, bool, bool]:
     return style, arrowhead, bidirectional, undirected
 
 
-def _xo_head_is_separate_arrow(text: str, label_start: int, label_end: int) -> bool:
-    """Return whether `x`/`o` after `--` or `==` is an arrowhead, not a label.
-
-    Mermaid's link token can end in `x` or `o` only when whitespace follows that
-    character and the next link is a separate operator (`A --o B --> C`). A
-    compact label may still start with `x` or `o`: the closing operator is
-    glued to the label (`A--x marks-->B`), or the next character is a bracket
-    the mask has blanked (`A--x(a)-->B`). This reads the original text so a
-    masked bracket is not mistaken for that whitespace.
-    """
-    if label_end <= label_start or label_start >= len(text):
-        return False
-    if text[label_start] not in "xo":
-        return False
-    if label_start + 1 >= len(text) or not text[label_start + 1].isspace():
-        return False
-    return text[label_end - 1].isspace()
-
-
 def _edge_operators(text: str) -> list[_Operator]:
     mask = _top_level_mask(text)
     operators: list[_Operator] = []
@@ -654,23 +635,24 @@ def _edge_operators(text: str) -> list[_Operator]:
     # boundaries are never ambiguous.
     #
     # A compact dash or equals label may contain whitespace, including the
-    # blanks the mask writes over brackets, so `A==a b==>B`, `A--f(x)-->B`,
-    # `A--x marks-->B`, and `A--x(a)-->B` stay one labeled link. `-`, `=`,
-    # `.`, or `>` immediately after the opening still continues an unlabeled
-    # operator (`A----->B`). `x` or `o` ends that operator only when the
-    # original text has whitespace after it and whitespace again before a
-    # later link (`A --o B --> C`); a bracket does not count, because this
-    # decision uses the source rather than the mask. The dotted form's
-    # closing operator always opens with a literal `.`, so its compact label
-    # may contain internal whitespace (as in `A-.next candidate.->B`) without
-    # that check.
+    # blanks the mask writes over brackets, so `A==a b==>B` and `A--f(x)-->B`
+    # stay one labeled link. `-`, `=`, `.`, or `>` immediately after the
+    # opening still continues an unlabeled operator (`A----->B`). Mermaid's
+    # lexer always reads `x` or `o` immediately after `--` or `==` as that
+    # link's arrowhead, so a compact label cannot start with either letter:
+    # `A--x marks-->B`, `A--x marks -->B`, and `A--orders-->B` are two links
+    # through a `marks` or `rders` node, like `A --o B --> C`. Mermaid
+    # rejects `A--x(a)-->B` outright. A spaced label (`A-- x marks -->B`)
+    # is unaffected. The dotted form's closing operator always opens with a
+    # literal `.`, so its compact label may contain internal whitespace and
+    # start with `x` or `o` (as in `A-.x y.->B`).
     text_edge = re.compile(
         r"(?P<opening>"
         r"<(?:--|==)"
         r"|(?<![\w.:-])[xo](?:--|==)"
         r"|(?:--|==)"
         r")"
-        r"(?![-=.>])"
+        r"(?![-=.>xo])"
         r"(?:\s(?P<spaced>.+?)\s|(?P<compact>[^|<>]+?))"
         r"(?P<closing>-{2,}>|--[xo]|=+>|={2,}|-{3,})"
     )
@@ -699,12 +681,6 @@ def _edge_operators(text: str) -> list[_Operator]:
                     # `A-->x--go-->B`.
                     operator_start += 1
                     opening = opening[1:]
-            label_start = match.end("opening")
-            label_end = match.start("closing")
-            if edge_pattern is text_edge and _xo_head_is_separate_arrow(
-                text, label_start, label_end
-            ):
-                continue
             token = opening + match.group("closing")
             style, arrowhead, bidirectional, undirected = _operator_style(token)
             # Read the label from the whole span between the operators rather
@@ -727,7 +703,7 @@ def _edge_operators(text: str) -> list[_Operator]:
             occupied.append((operator_start, match.end()))
 
     pattern = re.compile(
-        r"[xo][-=.]+[xo]|<[-=.]+>|-+\.-+>|=+>|-+(?:>|x|o)|-+\.-+|={3,}|-{3,}"
+        r"[xo][-=.]+[xo]|<[-=.]+>|-+\.-+>|=+>|-+(?:>|x|o)|={2,}[xo]|-+\.-+|={3,}|-{3,}"
     )
     for match in pattern.finditer(mask):
         # Overlap, not just a contained start. An unlabeled token can begin

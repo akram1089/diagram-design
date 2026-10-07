@@ -469,7 +469,11 @@ W----->X
 
     # Remaining #209 forms: compact dash/equals labels with whitespace or
     # brackets, the dotted rows from the same report, and the two shapes that
-    # must stay unlabeled (`A --o B --> C`, `A----->B`).
+    # must stay unlabeled (`A --o B --> C`, `A----->B`). Native Mermaid 11
+    # reads `x`/`o` right after `--` or `==` as an arrowhead whatever follows
+    # it, so `T--x marks-->U`, the mixed `Ta--x marks -->Ua` and
+    # `Xa==o status ==>Ya`, and `Va--orders-->Wa` are each two links through
+    # an intermediate node; only the spaced `Sa-- x marks -->Sb` is a label.
     compact_issue_file = tmp / "compact-issue-209.mmd"
     compact_issue_file.write_text(
         """flowchart LR
@@ -483,9 +487,10 @@ N-.a b.->O-.c d.->P
 Q o-.o p.-o R
 Ao-.x y.->S
 T--x marks-->U
-V--x(a)-->W
-Xa==x marks==>Ya
-Xb==o(a)==>Yb
+Ta--x marks -->Ua
+Xa==o status ==>Ya
+Va--orders-->Wa
+Sa-- x marks -->Sb
 """,
         encoding="utf-8",
     )
@@ -495,7 +500,8 @@ Xb==o(a)==>Yb
     compact_issue_ids = sorted(node["id"] for node in compact_issue["nodes"])
     if compact_issue_ids != [
         "A", "Ao", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
-        "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "Xa", "Xb", "Ya", "Yb",
+        "N", "O", "P", "Q", "R", "S", "Sa", "Sb", "T", "Ta", "U", "Ua", "Va",
+        "Wa", "Xa", "Ya", "marks", "rders", "status",
     ]:
         fail(
             "a compact label with whitespace or brackets materialized phantom "
@@ -524,15 +530,26 @@ Xb==o(a)==>Yb
         ("O", "P", "c d", "dashed", "arrow", False),
         ("Q", "R", "o p", "dashed", "circle", True),
         ("Ao", "S", "x y", "dashed", "arrow", False),
-        ("T", "U", "x marks", "solid", "arrow", False),
-        ("V", "W", "x(a)", "solid", "arrow", False),
-        ("Xa", "Ya", "x marks", "thick", "arrow", False),
-        ("Xb", "Yb", "o(a)", "thick", "arrow", False),
+        ("T", "marks", "", "solid", "cross", False),
+        ("marks", "U", "", "solid", "arrow", False),
+        ("Ta", "marks", "", "solid", "cross", False),
+        ("marks", "Ua", "", "solid", "arrow", False),
+        ("Xa", "status", "", "thick", "circle", False),
+        ("status", "Ya", "", "thick", "arrow", False),
+        ("Va", "rders", "", "solid", "circle", False),
+        ("rders", "Wa", "", "solid", "arrow", False),
+        ("Sa", "Sb", "x marks", "solid", "arrow", False),
     ]:
         fail(
             "compact dash/equals labels with whitespace or brackets were not "
-            f"retained, or an unlabeled chain was misread: {compact_issue_edges}"
+            "retained, an unlabeled chain was misread, or a leading `x`/`o` "
+            f"was not read as Mermaid's arrowhead: {compact_issue_edges}"
         )
+    # Mermaid rejects a bracket right after an `x`/`o` arrowhead.
+    for index, line in enumerate(("V--x(a)-->W", "Xb==o(a)==>Yb")):
+        rejected = tmp / f"compact-xo-bracket-{index}.mmd"
+        rejected.write_text(f"flowchart LR\n{line}\n", encoding="utf-8")
+        expect_error([str(rejected)], "malformed edge")
 
     modern_file = tmp / "modern-flowchart.mmd"
     modern_file.write_text(
